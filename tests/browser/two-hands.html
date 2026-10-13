@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>双手动作回放测试 · 合成数据</title>
+<div id="app"></div><section id="replay" style="position:fixed;left:14px;bottom:14px;z-index:20;background:#fff8df;padding:10px;border:1px solid #d3b87a;border-radius:10px;font:12px sans-serif;max-width:360px"><strong>开发测试：合成双手数据，未开启摄像头</strong><div style="display:flex;gap:6px;margin:8px 0"><button data-action="idle">自然握持</button><button data-action="press">按压回放</button><button data-action="stroke">抚摸回放</button><button data-action="hold">收紧回放</button><button data-action="lost">托蛋手消失</button></div><output id="replay-result">等待连接</output></section>
+<script type="module">
+import '../../src/styles.css';
+import { mountPanel } from '../../src/ui/panel.ts';
+import { mountTwinPanel } from '../../src/twin/ui.ts';
+import { installTwin } from '../../src/twin/controller.ts';
+import { Simulation } from '../../src/physics/simulation.ts';
+import { createWorld } from '../../src/scene/world.ts';
+import { supportHand,actorAt,gripHand } from '../fixtures/hands.ts';
+mountPanel();mountTwinPanel();
+const sim=new Simulation(),world=await createWorld(document.querySelector('#scene'),sim);
+let action='idle',started=0,lastFrame=0,last=0,gap=0;
+const camera={running:false,async start(){this.running=true;started=performance.now();},stop(){this.running=false;},sample(now){
+  if(!this.running||now-lastFrame<65)return null;gap=lastFrame?now-lastFrame:0;lastFrame=now;
+  const t=(now-started)/1000;
+  let holder=supportHand(),actor=actorAt(1.2,-.1);
+  if(action==='press')actor=actorAt(1.2-Math.min(.65,t*.5),0);
+  if(action==='stroke')actor=actorAt(-.65+1.1*((t%2)/2),-.6);
+  if(action==='hold')holder=gripHand(Math.min(.6,t*.7));
+  return action==='lost'?[actor]:Math.floor(t*3)%2?[actor,holder]:[holder,actor];
+}};
+const twin=installTwin(world,sim,()=>{sim.reset();world.resetFace();},camera);
+document.querySelector('#scene-message').hidden=true;document.querySelector('#gpu-status').textContent='WEBGPU · SYNTHETIC TEST';
+for(const button of document.querySelectorAll('[data-action]'))button.addEventListener('click',()=>{action=button.dataset.action;started=performance.now();});
+world.renderer.setAnimationLoop(now=>{const dt=last?Math.min(.1,(now-last)/1000):1/60;last=now;twin.update(dt,now);sim.advance(dt);world.update(dt);world.renderer.render(world.scene,world.camera);const state=twin.snapshot();document.querySelector('#replay-result').textContent=`${state.visibleHands} hands · ${state.source} · ${state.gesture} · holder ${state.holderId} · interval ${Math.round(gap)} ms`;});
+window.addEventListener('pagehide',()=>{twin.dispose();world.dispose();},{once:true});
+</script></html>
