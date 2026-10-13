@@ -170,7 +170,7 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
     }else {twinOffset.set(0,0,0);pudding.quaternion.identity();pudding.scale.setScalar(1);}
     wire.quaternion.copy(pudding.quaternion);wire.scale.copy(pudding.scale);
     pudding.position.copy(twinOffset);wire.position.copy(twinOffset);
-    face.update(dt,serving!==null,twinActive?Math.max(0,...pressureValues):0,twinActive&&gesture==='stroke');
+    face.update(dt,serving!==null,twinActive?Math.max(0,...pressureValues):0,twinActive&&(gesture==='stroke'||gesture==='headStroke'),twinActive?(gesture==='pat'?'head-pat':gesture==='headStroke'?'head-stroke':gesture==='cradle'?'cradle':'none'):'none');
   }
   function dispose(){observer.disconnect();renderer.setAnimationLoop(null);finishServing();face.dispose();pudding.geometry.dispose();material.dispose();wire.material.dispose();steel.dispose();cutlery.dispose();ground.geometry.dispose();ground.material.dispose();grid.geometry.dispose();(grid.material as THREE.Material).dispose();envTarget.dispose();light.shadow.dispose();renderer.dispose();}
   const info=adapter.info;

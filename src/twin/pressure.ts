@@ -1,5 +1,5 @@
 import type { TwinConfig } from './config.ts';
-export type Gesture='idle'|'touch'|'pinch'|'hold'|'stroke'|'press';
+export type Gesture='idle'|'touch'|'pinch'|'hold'|'stroke'|'press'|'pat'|'headStroke'|'cradle';
 export interface PressureFrame { values:number[]; normalized:boolean }
 export function parsePressure(line:string,config:TwinConfig):PressureFrame {
   const packet:unknown=JSON.parse(line);

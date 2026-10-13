@@ -1,5 +1,5 @@
 import { diagnostics } from '../diagnostics/runtime.ts';
-import { VisionGestures } from './vision-gestures.ts';
+import { EggInteractions } from './egg-interactions.ts';
 import { EggMotion } from './egg-tracking.ts';
 import { defaultConfig,parseConfig } from './config.ts';
 import { PressureEngine,parsePressure } from './pressure.ts';
@@ -11,14 +11,14 @@ import type { TrackedHand } from './tracking.ts';
 import { element } from '../ui/panel.ts';
 import type { World } from '../scene/world.ts';
 import type { Simulation } from '../physics/simulation.ts';
-const labels:Record<Gesture,string>={idle:'等你碰一碰',touch:'轻轻触碰',pinch:'被捏住了',hold:'持续握紧',stroke:'像是在抚摸',press:'正在按压'};
+const labels:Record<Gesture,string>={idle:'等你碰一碰',touch:'轻轻触碰',pinch:'被捏住了',hold:'持续握紧',stroke:'像是在抚摸',press:'正在按压',pat:'被拍拍头了',headStroke:'正在享受摸头',cradle:'被两只手稳稳托住'};
 const storageKey='soft-egg-twin-config-v1';
 type TwinCamera=Pick<CameraInput,'running'|'start'|'sample'|'stop'>&Partial<Pick<CameraInput,'sampleEgg'|'pickEggColor'|'resetEggColor'|'stats'>>;
 export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraOverride?:TwinCamera){
   let config=structuredClone(defaultConfig);
   try{const saved=localStorage.getItem(storageKey);if(saved)config=parseConfig(JSON.parse(saved));}catch{/* Invalid or unavailable local storage falls back to the example. */}
   let engine=new PressureEngine(config),visionEngine=new PressureEngine(config);
-  const serial=new SerialInput(),camera:TwinCamera=cameraOverride??new CameraInput(element<HTMLVideoElement>('#hand-video')),hand=new HandPosition(),hands=new TwoHandTracker(),vision=new VisionGestures(),egg=new EggMotion();
+  const serial=new SerialInput(),camera:TwinCamera=cameraOverride??new CameraInput(element<HTMLVideoElement>('#hand-video')),hand=new HandPosition(),hands=new TwoHandTracker(),vision=new EggInteractions(),egg=new EggMotion();
   const visionToggle=element<HTMLInputElement>('#vision-enabled');
   const eggToggle=element<HTMLInputElement>('#egg-enabled'),eggScale=element<HTMLInputElement>('#egg-scale');
   let lastHolderId:number|null=null;
@@ -38,8 +38,8 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
     element<HTMLInputElement>('#config-import').disabled=serialMode||serialBusy;
     sliders.forEach(s=>s.disabled=serialMode||usingVision());
     element<HTMLButtonElement>('#hand-swap').disabled=!camera.running||!hands.actor;
-    element('#hand-swap').textContent=hands.holder?'交换托蛋手':'用可见手托蛋';
-    element<HTMLButtonElement>('#gesture-calibrate').disabled=!camera.running||!hands.holder;
+    element('#hand-swap').textContent=hands.holder?'交换定位手':'用可见手定位';
+    element<HTMLButtonElement>('#gesture-calibrate').disabled=!camera.running||!hands.hands.length;
     visionToggle.disabled=!camera.running;
     eggToggle.disabled=!camera.running;eggScale.disabled=!camera.running||!eggToggle.checked;
     element<HTMLButtonElement>('#egg-color-reset').disabled=!camera.running;
@@ -72,7 +72,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
     element('#mode-twin').setAttribute('aria-pressed',String(twin));element('#mode-lab').setAttribute('aria-pressed',String(!twin));
     element('#scene').classList.toggle('twin',twin);
     element('.caption>p').textContent=twin?'握在手里，回应在眼前。':'Squish. Stretch. Make a face.';
-    element('.caption>span').textContent=twin?'移动 · 摇摆 · 捏握 · 轻轻抚摸':'A little squeeze, a little smile.';
+    element('.caption>span').textContent=twin?'拍头 · 摸头 · 双手托住':'A little squeeze, a little smile.';
     element('.intro>p').innerHTML=twin?'一点触碰。<br>一点回应。<br>陪在手心里的小家伙。':'A little softness.<br>A little gravity.<br>A very happy wobble.';
     element('.readings').hidden=twin;
     if(twin)sim.tool='twin';else {stopCamera();void disconnect();}
@@ -104,7 +104,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
     element('#egg-color-status').textContent=ok?'已采样蛋的黄色，请保持片刻，等待金框锁定。':'请点击蛋上清楚的黄色部分，避开高光、手指和阴影。';
   },opts);
   element('#egg-color-reset').addEventListener('click',()=>{camera.resetEggColor?.();egg.reset();element('#egg-color-status').textContent='已恢复默认黄色范围。';},opts);
-  element('#gesture-calibrate').addEventListener('click',()=>{if(hands.holder){vision.calibrate();visionEngine.clear();element('#vision-status').textContent='已记录自然握姿，再收紧或用另一只手触碰';}},opts);
+  element('#gesture-calibrate').addEventListener('click',()=>{vision.reset();visionEngine.clear();element('#vision-status').textContent='已清除动作历史，请重新拍头、摸头或双手托举';},opts);
   visionToggle.addEventListener('change',()=>{release();syncAvailability();},opts);
   element('#gesture-sensitivity').addEventListener('input',()=>{vision.sensitivity=Number(element<HTMLInputElement>('#gesture-sensitivity').value)/100;element('#gesture-sensitivity-value').textContent=`${vision.sensitivity.toFixed(1)}×`;},opts);
   element('#serial-connect').addEventListener('click',async()=>{
@@ -147,12 +147,12 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
         ctx.beginPath();ids.forEach((id,i)=>{const p=points[id];if(p){if(i===0)ctx.moveTo((1-p.x)*640,p.y*480);else ctx.lineTo((1-p.x)*640,p.y*480);}});ctx.stroke();
       }
       for(const p of points){ctx.beginPath();ctx.arc((1-p.x)*640,p.y*480,4,0,Math.PI*2);ctx.fill();}
-      ctx.font='22px sans-serif';ctx.fillText(holding?'托蛋手':'触碰手',Math.max(4,Math.min(550,(1-track.center.x)*640)),Math.max(25,track.center.y*480-40));
+      ctx.font='22px sans-serif';ctx.fillText(holding?'定位手':'另一只手',Math.max(4,Math.min(550,(1-track.center.x)*640)),Math.max(25,track.center.y*480-40));
     }
     const contact=vision.feedback(now,config.zones.length).contact;
     if(contact){ctx.strokeStyle='#ffe3a5';ctx.lineWidth=3;ctx.beginPath();ctx.arc((1-contact.x)*640,contact.y*480,16,0,Math.PI*2);ctx.stroke();}
     const trackedEgg=egg.observation;
-    if(eggToggle.checked&&trackedEgg&&now-egg.lastSeen<400){
+    if((eggToggle.checked||visionToggle.checked)&&trackedEgg&&now-egg.lastSeen<400){
       const b=trackedEgg.bounds;ctx.strokeStyle='#ffdb55';ctx.lineWidth=3;
       ctx.strokeRect((1-b.x-b.width)*640,b.y*480,b.width*640,b.height*480);
       if(trackedEgg.angleReliable){
@@ -167,18 +167,15 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
   function demoValues(now:number){
     if(!demo)return manual;
     const t=(now-demo.start)/1000,values=config.zones.map(()=>0);
-    if(demo.kind==='pinch'){
-      if(t>1){demo=null;return values;}values[Math.min(2,values.length-1)]=Math.sin(Math.PI*t)*.88;
-    }else if(demo.kind==='hold'){
-      if(t>3){demo=null;return values;}
-      const amount=Math.min(1,t*4,(3-t)*4)*.76;values.fill(amount);
-    }else{
-      if(t>2.4){demo=null;return values;}
-      const preferred=['left','front','right'].map(id=>config.zones.findIndex(z=>z.id===id));
-      const path=preferred.every(i=>i>=0)?preferred:config.zones.map((_,i)=>i).slice(0,3);
-      const step=t/.65;
-      path.forEach((id,i)=>values[id]=Math.max(0,1-Math.abs(step-i))*.25);
+    const top=config.zones.reduce((best,z,i)=>z.position[1]>config.zones[best].position[1]?i:best,0);
+    if(demo.kind==='pat'){
+      if(t>1){demo=null;return values;}values[top]=Math.sin(Math.PI*t)*.3;
+    }else if(demo.kind==='headStroke'){
+      if(t>3.5){demo=null;return values;}values[top]=.14*(.7+.3*Math.sin(t*5));
+    }else if(demo.kind==='cradle'){
+      if(t>4)demo=null;
     }
+
     return values;
   }
   function update(dt:number,now:number){
@@ -189,8 +186,9 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
         hands.update(detections,now);
         const holder=hands.holder;
         if(holder){if(lastHolderId!==holder.id){hand.reset();lastHolderId=holder.id;}hand.receive(holder.landmarks,now);}
-        if(eggToggle.checked)egg.receive(camera.sampleEgg?.(holder,now)??null,now);
-        vision.sample(holder,hands.actor,config.zones,now);drawHands(hands.hands,now);
+        if(eggToggle.checked||visionToggle.checked)egg.receive(camera.sampleEgg?.(holder,now)??null,now);
+        const video=element<HTMLVideoElement>('#hand-video'),aspect=video.videoWidth&&video.videoHeight?video.videoWidth/video.videoHeight:4/3;
+        vision.sample(hands.hands,egg.observation&&now-egg.lastSeen<400?egg.observation:null,config.zones,now,aspect);drawHands(hands.hands,now);
       }
     }catch(error){diagnostics?.event('tracking.error',error instanceof Error?error.message:String(error));stopCamera();cameraStatus.textContent=`追踪已停止：${error instanceof Error?error.message:String(error)}`;}
     hand.update(dt,now);
@@ -199,7 +197,9 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
     if(!serialMode&&!visual)engine.ingest({values:demoValues(now),normalized:true},now);
     engine.update(dt,now);
     visionEngine.ingest({values:visual?feedback.values:config.zones.map(()=>0),normalized:true},now);visionEngine.update(dt,now);
-    displayedValues=visual?visionEngine.values:engine.values;displayedGesture=visual?feedback.gesture:engine.gesture;
+    displayedValues=visual?visionEngine.values:engine.values;
+    const liveInteraction=camera.running&&visionToggle.checked&&feedback.gesture!=='idle';
+    displayedGesture=liveInteraction?feedback.gesture:visual?'idle':demo?.kind??engine.gesture;
     const peak=visual?visionEngine.peak:engine.peak;
     const eggActive=camera.running&&eggToggle.checked&&egg.acquired;
     world.setTwinInput(true,eggActive?egg.x:hand.x,eggActive?egg.y:hand.y,displayedValues,displayedGesture);
@@ -214,7 +214,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
         element('#hand-count').textContent=`${count} / 2 只手`;
         cameraStatus.textContent=now-hand.lastSeen<400?`正在跟随托蛋手 · ${count} 只手可见`:'托蛋手暂时不可见 · 位置保持';
         if(eggActive)cameraStatus.textContent=`黄色蛋追踪 · ${count} 只手可见`;
-        element('#egg-status').textContent=!eggToggle.checked?'已关闭蛋体追踪 · 跟随托蛋手位置':!egg.acquired?'寻找手边的黄色蛋 · 暂由托蛋手控制位置':now-egg.lastSeen>400?'轮廓暂时丢失 · 保持最后位置与倾斜':`黄色蛋已锁定 · 倾斜 ${Math.round(egg.roll*180/Math.PI)}° · ${eggScale.checked?`大小 ${egg.scale.toFixed(2)}×`:'大小固定'}${egg.observation?.angleReliable?'':' · 轮廓接近圆形，倾斜保持'}`;
+        element('#egg-status').textContent=!eggToggle.checked?(visionToggle.checked?'位置与倾斜跟随已关闭 · 仍识别头部动作':'已关闭蛋体追踪 · 跟随定位手位置'):!egg.acquired?'寻找手边的黄色蛋 · 暂由托蛋手控制位置':now-egg.lastSeen>400?'轮廓暂时丢失 · 保持最后位置与倾斜':`黄色蛋已锁定 · 倾斜 ${Math.round(egg.roll*180/Math.PI)}° · ${eggScale.checked?`大小 ${egg.scale.toFixed(2)}×`:'大小固定'}${egg.observation?.angleReliable?'':' · 轮廓接近圆形，倾斜保持'}`;
         element('#vision-status').textContent=feedback.message;
       }
       if(serialMode){
