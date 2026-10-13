@@ -12,7 +12,7 @@ export function mountTwinPanel(){
         <label class="vision-toggle"><input id="egg-enabled" type="checkbox" checked>跟随黄色蛋的位置与倾斜</label>
         <p id="egg-status" class="hint" role="status">开启摄像头后，让黄色蛋露出轮廓。</p>
         <details class="gesture-guide"><summary>蛋的追踪与校准 <span>+</span></summary>
-          <p>先把蛋竖直拿好，露出尽量完整的黄色轮廓，再点「当前位置归中」。金框锁定后，左右、上下移动和倾斜摇摆会同步到屏幕。</p>
+          <p>先把蛋竖直拿好，露出尽量完整的黄色轮廓，再点「当前位置归中」。金框锁定后，左右、上下移动和倾斜摇摆会同步到屏幕。蛋在画面里竖直时数字蛋也竖直；归中只调整位置与大小。</p>
           <p>识别不到时，可点击预览里蛋的黄色部分校准颜色，避开高光与手指。背景尽量不要有相似黄色物体。</p>
           <button id="egg-color-reset">恢复默认黄色</button><p id="egg-color-status" role="status"></p>
           <label class="vision-toggle"><input id="egg-scale" type="checkbox" checked>跟随轮廓大小，表现靠近与远离</label>

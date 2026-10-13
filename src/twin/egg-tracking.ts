@@ -69,13 +69,12 @@ export class EggMotion {
   x=0;y=0;roll=0;scale=1;lastSeen=-Infinity;
   observation:EggObservation|null=null;
   private origin:EggObservation|null=null;
-  private lastAngle:number|null=null;
   private target={x:0,y:0,roll:0,scale:1};
   private candidate:EggObservation|null=null;
   private candidateAt=-Infinity;
   private stable=0;
   get acquired(){return this.origin!==null;}
-  reset(){this.x=this.y=this.roll=0;this.scale=1;this.lastSeen=this.candidateAt=-Infinity;this.origin=this.observation=this.candidate=null;this.lastAngle=null;this.stable=0;this.target={x:0,y:0,roll:0,scale:1};}
+  reset(){this.x=this.y=this.roll=0;this.scale=1;this.lastSeen=this.candidateAt=-Infinity;this.origin=this.observation=this.candidate=null;this.stable=0;this.target={x:0,y:0,roll:0,scale:1};}
   receive(value:EggObservation|null,now:number){
     if(!value){this.stable=0;this.candidate=null;return;}
     // Require three nearby detections before acquiring/reacquiring, avoiding isolated yellow noise.
@@ -89,15 +88,12 @@ export class EggMotion {
     this.target.x=clamp((this.origin.x-value.x)*4,-1,1);
     this.target.y=clamp((this.origin.y-value.y)*4,-1,1);
     if(value.angleReliable){
-      if(this.lastAngle!==null){
-        // An ellipse has no directed tip: unwrap across ±90°, never assert a 180° flip.
-        let delta=value.angle-this.lastAngle;
-        while(delta>Math.PI/2)delta-=Math.PI;
-        while(delta<-Math.PI/2)delta+=Math.PI;
-        // Reacquisition chooses the closest equivalent long axis, not an unseen turn count.
-        this.target.roll+=delta;
-      }
-      this.lastAngle=value.angle;
+      // The camera image's vertical axis is upright, regardless of the first lock or recenter.
+      // Pure-color PCA is an undirected axis: report tilt within ±90°, not accumulated spins.
+      let tilt=value.angle-Math.PI/2;
+      while(tilt>Math.PI/2)tilt-=Math.PI;
+      while(tilt<-Math.PI/2)tilt+=Math.PI;
+      this.target.roll=Math.abs(tilt)<Math.PI/60?0:tilt;
     }
     // Long axis changes less than visible colored area when fingers partly cover the egg.
     this.target.scale=clamp(value.major/this.origin.major,.7,1.4);
@@ -105,7 +101,7 @@ export class EggMotion {
   }
   recenter(now:number){
     if(!this.observation||now-this.lastSeen>400)return false;
-    this.origin={...this.observation};this.target={x:0,y:0,roll:0,scale:1};
+    this.origin={...this.observation};this.target={x:0,y:0,roll:this.target.roll,scale:1};
     return true;
   }
   update(dt:number,now:number){
