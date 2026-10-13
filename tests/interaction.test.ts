@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BufferAttribute,BufferGeometry,Mesh,MeshBasicMaterial,PerspectiveCamera } from 'three/webgpu';
+import { BufferAttribute,BufferGeometry,Mesh,MeshBasicMaterial,PerspectiveCamera,Raycaster,Vector2 } from 'three/webgpu';
 import { Simulation } from '../src/physics/simulation.ts';
 import { PuddingSurface } from '../src/pudding/surface.ts';
 import { installGrab } from '../src/interaction/grab.ts';
@@ -55,7 +55,7 @@ test('the spoon tool presses on pointer down, bites on release and keeps the gra
   const geometry=new BufferGeometry();geometry.setIndex(new BufferAttribute(skin.indices,1));geometry.setAttribute('position',new BufferAttribute(skin.positions,3));
   const pudding=new Mesh(geometry,new MeshBasicMaterial()),camera=new PerspectiveCamera(31,1,.1,20);
   // Looking down at the top so that dragging down on screen digs into the pudding.
-  camera.position.set(0,5.5,3.5);camera.lookAt(0,.67,0);camera.updateMatrixWorld();pudding.updateMatrixWorld();
+  camera.position.set(0,5.5,3.5);camera.lookAt(0,sim.body.mesh.height*.85,0);camera.updateMatrixWorld();pudding.updateMatrixWorld();
   class Canvas extends EventTarget {
     captured=false;classes=new Set<string>();
     classList={add:(c:string)=>{this.classes.add(c);},remove:(c:string)=>{this.classes.delete(c);}};
@@ -74,7 +74,8 @@ test('the spoon tool presses on pointer down, bites on release and keeps the gra
     canvas.dispatchEvent(event('pointerdown'));assert.equal(sim.body.spoon===null,true,'the spoon is idle while fingers are active');
     assert.ok(sim.body.grab);canvas.dispatchEvent(event('pointerup'));
     sim.tool='spoon';
-    canvas.dispatchEvent(event('pointermove'));assert.ok(world.spoonTarget.y>sim.body.mesh.height,'hovering rests the bowl just above the top it points at');
+    const ray=new Raycaster();ray.setFromCamera(new Vector2(0,0),camera);const hit=ray.intersectObject(pudding)[0];assert.ok(hit);
+    canvas.dispatchEvent(event('pointermove'));assert.ok(world.spoonTarget.y>hit.point.y,'hovering rests the bowl above the curved skin it points at');
     canvas.dispatchEvent(event('pointerdown'));assert.equal(sim.body.grab,null);
     const pressing=sim.body.spoon;assert.ok(pressing);assert.ok(canvas.classes.has('pressing'));
     const cells=sim.body.mesh.cells.length,startY=pressing.center[1];

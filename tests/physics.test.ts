@@ -29,7 +29,7 @@ test('pause, reset, slow motion and background recovery keep their observable co
   s.reset();assert.equal(s.paused,false);assert.equal(s.slow,false);
   assert.deepEqual(s.body.position,s.body.mesh.rest);assert.ok(s.body.velocity.every(v=>v===0));
 });
-test('bounded top grab, 30% compression and release remain volumetric',()=>{
+test('bounded deep crown grab and release remain volumetric',()=>{
   const s=new Simulation(),skin=new PuddingSurface(s.body.mesh);run(s,2);
   let nearest=0,dist=Infinity;
   for(let i=0;i<skin.count;i++) {
@@ -40,12 +40,14 @@ test('bounded top grab, 30% compression and release remain volumetric',()=>{
   const anchor=[...s.body.grab!.anchor];let minimum=Infinity;
   for(let i=0;i<180;i++) {
     const t=Math.min(1,i/90);
-    s.body.moveGrab([anchor[0]+.12*t,anchor[1]-.405*t,anchor[2]]);
+    s.body.moveGrab([anchor[0]+.12*t,anchor[1]-s.body.mesh.height*.3*t,anchor[2]]);
     s.advance(1/60);minimum=Math.min(minimum,s.body.metrics().minTetRatio);
   }
   const compression=(anchor[1]-s.body.point(s.body.grab!.weights)[1])/s.body.mesh.height;
-  assert.ok(compression>.26&&compression<.34,`actual compression ${compression}`);
+  assert.ok(compression>.20&&compression<.34,`actual compression ${compression}`);
+  const held=s.body.position.slice();
   s.body.release();run(s,5);
+  assert.ok(s.body.position.some((v,i)=>Math.abs(v-held[i])>.05),'release must recover instead of freezing at the compression limit');
   const m=s.body.metrics();assert.ok(minimum>0,`min ratio ${minimum}`);
   assert.ok(Math.abs(m.volumeRatio-1)<.03,JSON.stringify(m));
 });

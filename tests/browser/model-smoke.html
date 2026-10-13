@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Hand model smoke check</title>
+<p>模型资源与推理检查（不打开摄像头）</p><pre id="result">Loading…</pre>
+<script type="module">
+import { FilesetResolver,HandLandmarker } from '@mediapipe/tasks-vision';
+const result=document.querySelector('#result');
+try{
+  const vision=await FilesetResolver.forVisionTasks('/mediapipe/wasm');
+  const model=await HandLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'/mediapipe/hand_landmarker.task',delegate:'CPU'},runningMode:'VIDEO',numHands:1});
+  const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;canvas.getContext('2d').fillRect(0,0,640,480);
+  const output=model.detectForVideo(canvas,performance.now());model.close();
+  if(output.landmarks.length!==0)throw new Error('Unexpected hand on a blank test frame');
+  result.textContent='PASS: local WASM + pinned model loaded; blank-frame inference completed with zero hands. Real hand tracking still needs a camera test.';
+}catch(error){result.textContent='FAIL: '+error.message;console.error(error);}
+</script></html>

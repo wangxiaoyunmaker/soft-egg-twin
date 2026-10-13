@@ -28,7 +28,7 @@ export interface VolumeMesh {
 export const cellIndex = (x: number, y: number, z: number, n: number) => (y*n+z)*n+x;
 export const cellCoords = (id: number, n: number): Vec3 => [id%n, Math.floor(id/(n*n)), Math.floor(id/n)%n];
 export const nodeIndex = (x: number, y: number, z: number, n: number) => (y*(n+1)+z)*(n+1)+x;
-const PUDDING_HEIGHT = 1.35;
+const EGG_HEIGHT = 2;
 
 export function tetVolume(p: ArrayLike<number>, a: number, b: number, c: number, d: number): number {
   const x = p[b*3]-p[a*3], y = p[b*3+1]-p[a*3+1], z = p[b*3+2]-p[a*3+2];
@@ -37,16 +37,20 @@ export function tetVolume(p: ArrayLike<number>, a: number, b: number, c: number,
   return (x*(v*t-w*s) + y*(w*r-u*t) + z*(u*s-v*r))/6;
 }
 
-/** Rest positions of the complete structured grid; the square-to-disc map has no collapsed polar axis. */
+/** Map a structured cube into a solid egg, without collapsing a row of nodes at either pole. */
 function gridRest(n: number, layers: number): Float64Array {
   const points: number[] = [];
   for (let y = 0; y <= layers; y++) for (let z = 0; z <= n; z++) for (let x = 0; x <= n; x++) {
-    const u = 2*x/n-1, v = 2*z/n-1, h = y/layers;
-    // Keep a nonzero corner Jacobian; subdivision rounds the remaining shallow corners.
-    const dx = u*Math.sqrt(1-.8*v*v/2), dz = v*Math.sqrt(1-.8*u*u/2);
-    const r = Math.hypot(dx,dz), theta = Math.atan2(dz,dx);
-    const radius = (1.03-.21*h)*(1+.075*Math.cos(8*theta)*r*r);
-    points.push(dx*radius, h*PUDDING_HEIGHT, dz*radius);
+    const u = 2*x/n-1, v = 2*y/layers-1, w = 2*z/n-1;
+    // Spherified-cube mapping keeps the existing cell topology and closed quad skin.
+    const dx = .92*u*Math.sqrt(1-v*v/2-w*w/2+v*v*w*w/3)+.08*u;
+    const dy = .92*v*Math.sqrt(1-u*u/2-w*w/2+u*u*w*w/3)+.08*v;
+    const dz = .92*w*Math.sqrt(1-u*u/2-v*v/2+u*u*v*v/3)+.08*w;
+    // A fuller lower half and narrower crown give the asymmetric egg silhouette.
+    const radius = .79*(1-.15*dy);
+    // A small, unobtrusive contact patch lets the soft egg stand and recover after a nudge.
+    const height=Math.max(0,(dy+1-.14)/(2-.14))*EGG_HEIGHT;
+    points.push(dx*radius, height, dz*radius);
   }
   return new Float64Array(points);
 }
@@ -62,7 +66,7 @@ for (const axis of [0,1,2]) for (const side of [0,1]) {
 
 /** Conforming Freudenthal tetrahedra over the active cells of an n×layers×n grid. */
 export function makeVolumeMesh(n = 8, layers = 5, removed: Iterable<number> = []): VolumeMesh {
-  const removedSet = new Set(removed), grid = gridRest(n, layers), height = PUDDING_HEIGHT;
+  const removedSet = new Set(removed), grid = gridRest(n, layers), height = EGG_HEIGHT;
   const gridNodes = (n+1)*(n+1)*(layers+1), lookup = new Int32Array(gridNodes).fill(-1);
   const isActive = (x: number, y: number, z: number) => x>=0&&x<n&&y>=0&&y<layers&&z>=0&&z<n&&!removedSet.has(cellIndex(x,y,z,n));
   const gridTets: number[] = [], gridQuads: Quad[] = [], cells: number[] = [];
@@ -120,7 +124,7 @@ export function makeVolumeMesh(n = 8, layers = 5, removed: Iterable<number> = []
     maxEdgeRatio=Math.max(maxEdgeRatio,longest/shortest);
     minQuality=Math.min(minQuality,12*Math.pow(3*vol,2/3)/sum);
   }
-  if(minVolume<1e-7 || minQuality<.08) throw new Error(`Degenerate pudding cage: volume=${minVolume}, quality=${minQuality}, edgeRatio=${maxEdgeRatio}`);
+  if(minVolume<1e-7 || minQuality<.08) throw new Error(`Degenerate egg cage: volume=${minVolume}, quality=${minQuality}, edgeRatio=${maxEdgeRatio}`);
   const edges=new Uint32Array(edgeSet.size*2); let e=0;
   for(const key of edgeSet){edges[e++]=Math.floor(key/nodeCount);edges[e++]=key%nodeCount;}
   const lengths=new Float64Array(edges.length/2);

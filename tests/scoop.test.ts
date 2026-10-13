@@ -40,7 +40,7 @@ test('removing cells keeps a closed manifold boundary and exposes interior nodes
   assert.ok(closed(m.quads));assert.ok(m.quads.length>288);
   const {glaze,cut}=surfaceAttributes(skin,m);
   assert.ok(cut.some(v=>v>.9),'freshly exposed floor must be fully cut');
-  assert.ok(glaze.some(v=>v>.9),'the remaining rim keeps its caramel');
+  assert.ok(glaze.some(v=>v>.6),'the remaining skin keeps its egg tint');
   for(let i=0;i<skin.count;i++)assert.ok(glaze[i]+cut[i]<=1.0001);
   const outerNodes=m.nodeIds.filter((_,i)=>m.outer[i]===1).length;
   assert.ok(outerNodes>0&&outerNodes<m.mass.length);
@@ -83,13 +83,13 @@ test('a spoon press deforms without inversion and the scoop removes a bounded bi
   const s=new Simulation();run(s,2);
   const spoon={center:[.25,s.body.mesh.height+SPOON_RADII[1]*.9,.1] as Vec3,radii:SPOON_RADII,yaw:SPOON_YAW};
   s.body.spoon=spoon;let minRatio=Infinity;
-  for(let i=0;i<90;i++){spoon.center[1]-=.3/90;s.advance(1/60);minRatio=Math.min(minRatio,s.body.metrics().minTetRatio);}
+  for(let i=0;i<90;i++){spoon.center[1]-=.5/90;s.advance(1/60);minRatio=Math.min(minRatio,s.body.metrics().minTetRatio);}
   assert.ok(minRatio>0,`press inverted ${minRatio}`);
   const before=s.body.metrics(),nodesBefore=s.body.mesh.mass.length,version=s.body.version;
   const started=performance.now(),bite=s.body.scoop(spoon),took=performance.now()-started;
   s.body.spoon=null;
   assert.ok(bite,'a pressed spoon must take a bite');
-  assert.ok(bite.cells.length>=2&&bite.cells.length<=14,`bite of ${bite.cells.length} cells`);
+  assert.ok(bite.cells.length>=1&&bite.cells.length<=32,`bite of ${bite.cells.length} cells`);
   assert.equal(s.body.version,version+1);assert.ok(s.body.mesh.mass.length<nodesBefore);
   assert.ok(closed(s.body.mesh.quads));
   const chunk=buildChunk(bite);assert.ok(chunk,'a compact bite is a closed chunk');

@@ -14,6 +14,7 @@ export function installSpoon(canvas:HTMLCanvasElement,world:World,sim:Simulation
   const ray=new Raycaster(),pointer=new Vector2(),plane=new Plane(),depth=new Plane(),target=new Vector3(),forward=new Vector3();
   const spoon:Spoon={center:[0,1.9,0],radii:SPOON_RADII,yaw:SPOON_YAW};
   let active:number|null=null,pressStart=0;
+  let pressX=0,pressZ=0;
   const stats={presses:0,bites:0,lastBiteCells:0};
   depth.setFromNormalAndCoplanarPoint(world.camera.getWorldDirection(forward),new Vector3(0,.9,0));
   function rayAt(e:PointerEvent) {
@@ -44,7 +45,7 @@ export function installSpoon(canvas:HTMLCanvasElement,world:World,sim:Simulation
   }
   canvas.addEventListener('pointerdown',e=>{
     if(sim.tool!=='spoon'||sim.paused||sim.hidden||active!==null||e.button!==0)return;
-    hover(e);active=e.pointerId;stats.presses++;pressStart=spoon.center[1];
+    hover(e);active=e.pointerId;stats.presses++;pressStart=spoon.center[1];pressX=spoon.center[0];pressZ=spoon.center[2];
     plane.setFromNormalAndCoplanarPoint(world.camera.getWorldDirection(forward),world.spoonTarget);
     sim.body.spoon=spoon;canvas.setPointerCapture(active);canvas.classList.add('pressing');
   },options);
@@ -53,7 +54,8 @@ export function installSpoon(canvas:HTMLCanvasElement,world:World,sim:Simulation
     if(active===null){hover(e);return;}
     if(active!==e.pointerId)return;
     if(sim.paused||!sim.body.spoon){cancel();return;}
-    rayAt(e);if(ray.ray.intersectPlane(plane,target))place(target.x,target.y,target.z);
+    // Favour digging down over sliding off the egg's narrow, curved crown.
+    rayAt(e);if(ray.ray.intersectPlane(plane,target))place(pressX+(target.x-pressX)*.35,target.y,pressZ+(target.z-pressZ)*.35);
     // Digging in tips the bowl nose-down, up to about 22 degrees at half a unit of depth.
     world.spoonTilt=Math.min(1,Math.max(0,(pressStart-spoon.center[1])/.5))*.38;
   },options);

@@ -7,7 +7,7 @@ export class Simulation {
   slow=false;
   hidden=false;
   /** Which pointer tool the stage uses; the panel switches it and Reset restores the grab. */
-  tool:'grab'|'spoon'='grab';
+  tool:'grab'|'spoon'|'twin'='grab';
   time=0;
   get alpha(){return this.accumulator/this.stepSize;}
   advance(elapsed:number) {

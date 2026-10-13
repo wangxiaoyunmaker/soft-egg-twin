@@ -4,3 +4,7 @@ dist/
 evidence/
 reviews/
 .sites-deploy/
+public/mediapipe/
+*.local
+.env
+.env.*

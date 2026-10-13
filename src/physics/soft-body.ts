@@ -1,5 +1,6 @@
 import { makeVolumeMesh, repairRemoval, tetVolume, cellCoords, nodeIndex } from './mesh.ts';
 import type { Vec3, VolumeMesh } from './mesh.ts';
+import { rightEgg } from './roly-poly.ts';
 
 /** The bowl is an ellipsoid; `yaw` is its rotation about y (three.js convention), long axis along local x. */
 export interface Spoon { center: Vec3; radii: Vec3; yaw?: number }
@@ -24,6 +25,8 @@ export class SoftBody {
   velocity:Float64Array;
   inverseMass:Float64Array;
   private old:Float64Array;
+  private proposal:Float64Array;
+  private incident:number[][];
   private readonly full:VolumeMesh;
   private readonly gradients=new Float64Array(12);
   /** Rest volumes straight from the grid, before any snapping; the guard for how far a cut node may move. */
@@ -34,18 +37,20 @@ export class SoftBody {
   version=0;
   firmness=.45;
   damping=3.04;
+  tiltDegrees=0;
   grab: {weights:[number,number][];target:Vec3;cursor:Vec3;anchor:Vec3} | null=null;
   spoon: Spoon | null=null;
   constructor(mesh=makeVolumeMesh()) {
     this.full=mesh.removed.size?makeVolumeMesh(mesh.n,mesh.layers):mesh;
     this.mesh=mesh;this.position=mesh.rest.slice();this.previous=mesh.rest.slice();
-    this.old=mesh.rest.slice();this.velocity=new Float64Array(mesh.rest.length);
+    this.old=mesh.rest.slice();this.proposal=mesh.rest.slice();this.incident=this.incidentTets();this.velocity=new Float64Array(mesh.rest.length);
     this.inverseMass=Float64Array.from(mesh.mass,m=>1/m);this.pristine=mesh.volumes.slice();
   }
   get eaten(){return this.mesh.removed;}
   get empty(){return this.mesh.cells.length===0;}
   get snappedNodes(){return this.restOffsets.size;}
   reset(drop=0) {
+    this.tiltDegrees=0;
     this.restOffsets.clear();
     if(this.mesh!==this.full)this.rebuild(this.full);
     this.position.set(this.mesh.rest);this.velocity.fill(0);this.grab=null;this.spoon=null;
@@ -95,6 +100,7 @@ export class SoftBody {
       }
     }
     this.previous=this.position.slice();this.old=this.position.slice();
+    this.proposal=this.position.slice();this.incident=this.incidentTets();
     this.refreshRest();this.grab=null;this.version++;
   }
   /** Recomputes rest lengths, rest volumes and masses after the rest positions moved. */
@@ -130,16 +136,19 @@ export class SoftBody {
       const scale=Math.min(1,cap/length);dx*=scale;dy*=scale;dz*=scale;
       for(let attempt=0;attempt<3;attempt++) {
         rest[i*3]+=dx;rest[i*3+1]+=dy;rest[i*3+2]+=dz;
+        p[i*3]+=dx;p[i*3+1]+=dy;p[i*3+2]+=dz;
         const ok=incident[i].every(t=>{
           const v=tetVolume(rest,tets[t*4],tets[t*4+1],tets[t*4+2],tets[t*4+3]);
-          return v>.3*this.pristine[t]&&v<2.5*this.pristine[t];
+          const current=tetVolume(p,tets[t*4],tets[t*4+1],tets[t*4+2],tets[t*4+3]);
+          return v>.3*this.pristine[t]&&v<2.5*this.pristine[t]&&current>.12*v;
         });
         if(ok) {
-          for(const arr of [p,this.previous,this.old]){arr[i*3]+=dx;arr[i*3+1]+=dy;arr[i*3+2]+=dz;}
+          for(const arr of [this.previous,this.old]){arr[i*3]+=dx;arr[i*3+1]+=dy;arr[i*3+2]+=dz;}
           const prior=this.restOffsets.get(nodeIds[i])??[0,0,0];
           this.restOffsets.set(nodeIds[i],[prior[0]+dx,prior[1]+dy,prior[2]+dz]);break;
         }
-        rest[i*3]-=dx;rest[i*3+1]-=dy;rest[i*3+2]-=dz;dx*=.5;dy*=.5;dz*=.5;
+        rest[i*3]-=dx;rest[i*3+1]-=dy;rest[i*3+2]-=dz;
+        p[i*3]-=dx;p[i*3+1]-=dy;p[i*3+2]-=dz;dx*=.5;dy*=.5;dz*=.5;
       }
     }
     this.refreshRest();
@@ -155,15 +164,21 @@ export class SoftBody {
     this.grab.target=this.grab.anchor.map((v,k)=>v+delta[k]*scale) as Vec3;
     this.grab.target[0]=Math.max(-1.1,Math.min(1.1,this.grab.target[0]));
     this.grab.target[2]=Math.max(-1.1,Math.min(1.1,this.grab.target[2]));
-    this.grab.target[1]=Math.max(.16,Math.min(1.95,this.grab.target[1]));
+    this.grab.target[1]=Math.max(.16,Math.min(this.mesh.height+.6,this.grab.target[1]));
   }
   release() {this.grab=null;}
   nudge(direction=1) {
+    let cx=0,cy=0,total=0;
+    for(let i=0;i<this.mesh.mass.length;i++){const m=this.mesh.mass[i];total+=m;cx+=this.position[i*3]*m;cy+=this.position[i*3+1]*m;}
+    if(total<=0)return;cx/=total;cy/=total;
     for(let i=0;i<this.mesh.mass.length;i++) {
       const h=this.mesh.rest[i*3+1]/this.mesh.height;
-      this.velocity[i*3]+=1.8*direction*h*h;
-      this.velocity[i*3+1]+=.22*h;
-      this.velocity[i*3+2]+=.18*h;
+      // Rock the whole egg as well as its soft crown, without translating the stage.
+      this.velocity[i*3]+=1.2*direction*(this.position[i*3+1]-cy);
+      this.velocity[i*3+1]-=1.2*direction*(this.position[i*3]-cx);
+      this.velocity[i*3]+=.65*direction*h*h;
+      this.velocity[i*3+1]+=.12*h;
+      this.velocity[i*3+2]+=.08*h;
     }
   }
   tap(point:Vec3) {
@@ -177,15 +192,24 @@ export class SoftBody {
   step(dt:number) {
     const p=this.position,v=this.velocity,w=this.inverseMass;
     this.previous.set(p);this.old.set(p);
+    this.tiltDegrees=rightEgg(this.mesh,p,v,dt,!!this.grab||!!this.spoon);
     for(let i=0;i<w.length;i++) {
       const j=i*3;v[j+1]-=9.81*dt;
       for(let k=0;k<3;k++) p[j+k]+=v[j+k]*dt;
     }
-    // Small-step XPBD: multipliers start at zero each substep, one projection per constraint.
+    // Small-step XPBD with extra edge relaxation for the taller, rounded cage.
+    this.solveEdges(dt);
+    this.solveEdges(dt);
     this.solveEdges(dt);
     this.solveGrab(dt);
     this.solveVolumes(dt);
     this.collide();
+    // The rounded base contacts the floor at a few small cells. Restore their
+    // volumes after contact, then reject any remaining step that would fold them.
+    this.solveVolumes(dt);
+    this.collide();
+    for(let pass=0;pass<3;pass++){this.solveVolumes(dt,true);this.collide();}
+    this.preventInversion();
     for(let i=0;i<v.length;i++)v[i]=(p[i]-this.old[i])/dt;
     this.dampInternal(dt);
     for(let i=0;i<w.length;i++) {
@@ -199,9 +223,31 @@ export class SoftBody {
       }
     }
   }
+  private incidentTets() {
+    const incident:number[][]=Array.from({length:this.mesh.mass.length},()=>[]);
+    this.mesh.tets.forEach((id,i)=>incident[id].push(i>>2));
+    return incident;
+  }
+  private preventInversion() {
+    const p=this.position,old=this.old,{tets,volumes}=this.mesh;
+    const healthy=(t:number)=>tetVolume(p,tets[t*4],tets[t*4+1],tets[t*4+2],tets[t*4+3])>=volumes[t]*.075;
+    if(volumes.every((_,t)=>healthy(t)))return;
+    this.proposal.set(p);p.set(old);
+    // Accept each vertex independently against all its incident cells. A trapped
+    // contact vertex can stay still while the rest of the body continues to recover.
+    for(let id=0;id<this.mesh.mass.length;id++) {
+      const j=id*3;let amount=1,accepted=false;
+      for(let attempt=0;attempt<12;attempt++) {
+        for(let k=0;k<3;k++)p[j+k]=old[j+k]+(this.proposal[j+k]-old[j+k])*amount;
+        if(this.incident[id].every(healthy)){accepted=true;break;}
+        amount*=.5;
+      }
+      if(!accepted)for(let k=0;k<3;k++)p[j+k]=old[j+k];
+    }
+  }
   private solveEdges(dt:number) {
     const p=this.position,w=this.inverseMass,{edges,lengths}=this.mesh;
-    const alpha=(.003+Math.pow(1-this.firmness,2)*.2)/(dt*dt);
+    const alpha=(.0001+Math.pow(1-this.firmness,2)*.004)/(dt*dt);
     for(let e=0;e<lengths.length;e++) {
       const ia=edges[e*2],ib=edges[e*2+1],a=ia*3,b=ib*3;
       const x=p[a]-p[b],y=p[a+1]-p[b+1],z=p[a+2]-p[b+2];
@@ -211,7 +257,7 @@ export class SoftBody {
       p[b]-=x*dl*w[ib];p[b+1]-=y*dl*w[ib];p[b+2]-=z*dl*w[ib];
     }
   }
-  private solveVolumes(dt:number) {
+  private solveVolumes(dt:number,barrier=false) {
     const p=this.position,w=this.inverseMass,{tets,volumes}=this.mesh,g=this.gradients;
     const alpha=1e-10/(dt*dt);
     for(let t=0;t<volumes.length;t++) {
@@ -224,9 +270,15 @@ export class SoftBody {
       g[9]=(by*cz-bz*cy)/6;g[10]=(bz*cx-bx*cz)/6;g[11]=(bx*cy-by*cx)/6;
       for(let k=0;k<3;k++)g[k]=-g[3+k]-g[6+k]-g[9+k];
       const volume=bx*g[3]+by*g[4]+bz*g[5];
+      if(barrier) {
+        if(volume>=volumes[t]*.3)continue;
+        // Floor contact cannot absorb a downward correction. Redirect the
+        // compression barrier into the remaining free directions instead.
+        for(let j=0;j<4;j++)if(p[tets[t*4+j]*3+1]<=.0001&&g[j*3+1]<0)g[j*3+1]=0;
+      }
       let denom=alpha;
       for(let j=0;j<4;j++)denom+=w[tets[t*4+j]]*(g[j*3]**2+g[j*3+1]**2+g[j*3+2]**2);
-      const dl=-(volume-volumes[t])/denom;
+      const dl=-(volume-volumes[t]*(barrier?.3:1))/denom;
       for(let j=0;j<4;j++)for(let k=0;k<3;k++)p[tets[t*4+j]*3+k]+=w[tets[t*4+j]]*g[j*3+k]*dl;
     }
   }
@@ -296,6 +348,6 @@ export class SoftBody {
     }
     let eatenVolume=0;for(const cell of this.mesh.removed)eatenVolume+=this.mesh.cellVolumes[cell];
     const empty=this.mesh.volumes.length===0;
-    return {volumeRatio:empty?1:volume/rest,minTetRatio:empty?1:minRatio,energy,minY:empty?0:minY,maxRadius,eatenRatio:eatenVolume/this.mesh.fullVolume,finite:this.position.every(Number.isFinite)};
+    return {volumeRatio:empty?1:volume/rest,minTetRatio:empty?1:minRatio,energy,minY:empty?0:minY,maxRadius,eatenRatio:eatenVolume/this.mesh.fullVolume,finite:this.position.every(Number.isFinite),tiltDegrees:this.tiltDegrees};
   }
 }

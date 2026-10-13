@@ -1,0 +1,72 @@
+{
+  "staleMs": 750,
+  "baudRate": 115200,
+  "zones": [
+    {
+      "id": "top",
+      "label": "顶部",
+      "position": [
+        0,
+        0.98,
+        0
+      ],
+      "baseline": 0,
+      "maximum": 1023
+    },
+    {
+      "id": "left",
+      "label": "左侧",
+      "position": [
+        -0.75,
+        0.55,
+        0.4
+      ],
+      "baseline": 0,
+      "maximum": 1023
+    },
+    {
+      "id": "front",
+      "label": "正面",
+      "position": [
+        0.1,
+        0.48,
+        0.9
+      ],
+      "baseline": 0,
+      "maximum": 1023
+    },
+    {
+      "id": "right",
+      "label": "右侧",
+      "position": [
+        0.8,
+        0.55,
+        0.35
+      ],
+      "baseline": 0,
+      "maximum": 1023
+    },
+    {
+      "id": "back",
+      "label": "背面",
+      "position": [
+        0,
+        0.5,
+        -0.9
+      ],
+      "baseline": 0,
+      "maximum": 1023
+    },
+    {
+      "id": "base",
+      "label": "底部",
+      "position": [
+        0,
+        0.06,
+        0.2
+      ],
+      "baseline": 0,
+      "maximum": 1023
+    }
+  ]
+}
