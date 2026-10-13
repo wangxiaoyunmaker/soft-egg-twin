@@ -1,4 +1,5 @@
 import './styles.css';
+import { startDiagnostics } from './diagnostics/runtime.ts';
 import { mountTwinPanel } from './twin/ui.ts';
 import { installTwin } from './twin/controller.ts';
 import { Simulation } from './physics/simulation.ts';
@@ -9,6 +10,7 @@ import { installSpoon } from './interaction/spoon.ts';
 import { mountPanel, element } from './ui/panel.ts';
 
 mountPanel();mountTwinPanel();
+const runtime=startDiagnostics();
 const sim=new Simulation(),canvas=element<HTMLCanvasElement>('#scene');
 const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const inspect=new URLSearchParams(location.search).has('inspect');
@@ -18,7 +20,7 @@ let twin:ReturnType<typeof installTwin>|undefined;
 let last=0,lastRead=0,selectedFlavor:Flavor='vanilla',disposed=false;
 let benchmark:{start:number;frames:number[];cpu:number[];lastNudge:number}|null=null;
 const status=element('#gpu-status'),message=element('#scene-message');
-const enableControls=(enabled:boolean)=>document.querySelectorAll<HTMLButtonElement|HTMLInputElement>('.controls button,.controls input').forEach(el=>{el.disabled=!enabled;});
+const enableControls=(enabled:boolean)=>document.querySelectorAll<HTMLButtonElement|HTMLInputElement>('.controls button,.controls input').forEach(el=>{if(el.id!=='diagnostics-export')el.disabled=!enabled;});
 enableControls(false);
 element('#diagnostics').hidden=!inspect;
 element('#inspector-toggle').hidden=!inspect;
@@ -59,6 +61,7 @@ element('#mesh').addEventListener('change',()=>{if(world)world.mesh=element<HTML
 document.addEventListener('visibilitychange',()=>{grab?.cancel();spoon?.cancel();sim.visibility(document.hidden);last=0;},opts);
 function fail(error:unknown) {
   if(disposed)return;
+  runtime.event('app.failed',error instanceof Error?{message:error.message,stack:error.stack}:String(error));
   world?.renderer.setAnimationLoop(null);grab?.cancel();spoon?.cancel();
   enableControls(false);twin?.dispose();
   status.className='status failed';status.innerHTML='<b></b> WEBGPU UNAVAILABLE';
@@ -96,7 +99,8 @@ function sampleBenchmark(now:number,dt:number,cpu:number) {
 }
 async function start() {
   try {
-    world=await createWorld(canvas,sim);if(disposed){world.dispose();return;}
+    runtime.stage('WebGPU 初始化');runtime.event('gpu.init',{});
+    world=await createWorld(canvas,sim);runtime.event('gpu.ready',world.deviceInfo);if(disposed){world.dispose();return;}
     world.renderer.onDeviceLost=()=>fail(new Error('The graphics device was disconnected. Try again to resume.'));
     world.renderer.onError=error=>fail(new Error(typeof error==='string'?error:JSON.stringify(error)));
     grab=installGrab(canvas,world,sim);spoon=installSpoon(canvas,world,sim,bite=>world!.serve(bite));
@@ -105,12 +109,19 @@ async function start() {
     if(reduced)for(let i=0;i<480;i++)sim.body.step(sim.stepSize);
     sim.body.previous.set(sim.body.position);
     twin=installTwin(world,sim,reset);
+    runtime.setState(()=>{const state=twin?.snapshot();return state?{active:state.active,source:state.source,gesture:state.gesture,visibleHands:state.visibleHands,camera:state.camera,cameraDetails:state.cameraDetails,eggAcquired:state.egg.acquired,eggAgeMs:Number.isFinite(state.egg.lastSeen)?Math.round(performance.now()-state.egg.lastSeen):null}:{};});
     status.className='status live';status.innerHTML='<b></b> WEBGPU · LIVE';message.hidden=true;
     element('#device-info').textContent=JSON.stringify({...world.deviceInfo,mesh:{nodes:sim.body.mesh.mass.length,tetrahedra:sim.body.mesh.volumes.length,triangles:world.skin.indices.length/3,quality:sim.body.mesh.quality}},null,2);
     world.renderer.setAnimationLoop((now:number)=>{
       const elapsed=last?(now-last)/1000:1/60,dt=Math.min(.25,elapsed);last=now;
-      const begin=performance.now();twin?.update(dt,now);sim.advance(dt);world!.update(dt);const cpu=performance.now()-begin;
-      world!.renderer.render(world!.scene,world!.camera);
+      const begin=performance.now();let cpu=0;
+      try{
+        runtime.measure('twin.update',()=>twin?.update(dt,now));
+        runtime.measure('physics',()=>sim.advance(dt));
+        runtime.measure('surface',()=>world!.update(dt));cpu=performance.now()-begin;
+        runtime.measure('render.submit',()=>world!.renderer.render(world!.scene,world!.camera));
+      }catch(error){fail(error);return;}
+      runtime.frame(elapsed*1000);
       sampleBenchmark(now,elapsed,cpu);
       if(now-lastRead>150) {
         const m=sim.body.metrics();element('#volume').textContent=`${(m.volumeRatio*100).toFixed(1)}%`;
@@ -123,6 +134,6 @@ async function start() {
     });
   }catch(error){fail(error);}
 }
-function dispose(){if(disposed)return;disposed=true;abort.abort();twin?.dispose();grab?.dispose();spoon?.dispose();world?.dispose();}
+function dispose(){if(disposed)return;disposed=true;abort.abort();twin?.dispose();grab?.dispose();spoon?.dispose();world?.dispose();runtime.dispose();}
 window.addEventListener('pagehide',dispose,{once:true,signal:abort.signal});if(import.meta.hot)import.meta.hot.dispose(dispose);
 void start();

@@ -1,3 +1,4 @@
+import { diagnostics } from '../diagnostics/runtime.ts';
 import { VisionGestures } from './vision-gestures.ts';
 import { EggMotion } from './egg-tracking.ts';
 import { defaultConfig,parseConfig } from './config.ts';
@@ -12,7 +13,7 @@ import type { World } from '../scene/world.ts';
 import type { Simulation } from '../physics/simulation.ts';
 const labels:Record<Gesture,string>={idle:'等你碰一碰',touch:'轻轻触碰',pinch:'被捏住了',hold:'持续握紧',stroke:'像是在抚摸',press:'正在按压'};
 const storageKey='soft-egg-twin-config-v1';
-type TwinCamera=Pick<CameraInput,'running'|'start'|'sample'|'stop'>&Partial<Pick<CameraInput,'sampleEgg'|'pickEggColor'|'resetEggColor'>>;
+type TwinCamera=Pick<CameraInput,'running'|'start'|'sample'|'stop'>&Partial<Pick<CameraInput,'sampleEgg'|'pickEggColor'|'resetEggColor'|'stats'>>;
 export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraOverride?:TwinCamera){
   let config=structuredClone(defaultConfig);
   try{const saved=localStorage.getItem(storageKey);if(saved)config=parseConfig(JSON.parse(saved));}catch{/* Invalid or unavailable local storage falls back to the example. */}
@@ -64,7 +65,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
   }
   function stopCamera(){camera.stop();hand.reset();hands.reset();egg.reset();world.setTwinPose(0,1);vision.reset();visionEngine.clear();lastHolderId=null;element('#egg-status').textContent='开启摄像头后，让黄色蛋露出轮廓。';element('#hand-count').textContent='0 / 2 只手';element('#vision-status').textContent='摄像头未开启';element('#camera-preview').hidden=true;element('#camera-connect').textContent='开启摄像头';cameraStatus.textContent='摄像头未开启';syncAvailability();}
   function setMode(twin:boolean){
-    active=twin;
+    diagnostics?.event('mode',{twin});active=twin;
     resetLab();release();hand.reset();hands.reset();egg.reset();world.setTwinPose(0,1);vision.reset();lastHolderId=null;
     element('#twin-controls').hidden=!twin;element('#twin-controls').scrollTop=0;element('#lab-controls').hidden=twin;
     element('#scene').setAttribute('aria-label',twin?'数字蛋：摄像头追踪黄色蛋的位置与倾斜，双手动作或多区域压力控制局部形变与表情。':'拖动软蛋以拉伸，或切换勺子挖取。');
@@ -191,7 +192,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
         if(eggToggle.checked)egg.receive(camera.sampleEgg?.(holder,now)??null,now);
         vision.sample(holder,hands.actor,config.zones,now);drawHands(hands.hands,now);
       }
-    }catch(error){stopCamera();cameraStatus.textContent=`追踪已停止：${error instanceof Error?error.message:String(error)}`;}
+    }catch(error){diagnostics?.event('tracking.error',error instanceof Error?error.message:String(error));stopCamera();cameraStatus.textContent=`追踪已停止：${error instanceof Error?error.message:String(error)}`;}
     hand.update(dt,now);
     egg.update(dt,now);
     const visual=usingVision(),feedback=vision.feedback(now,config.zones.length);
@@ -227,5 +228,5 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
   function visionTime(){return Math.max(-Infinity,...hands.hands.map(h=>h.lastSeen));}
   buildSliders();setMode(true);syncAvailability();
   if(!SerialInput.supported())pressureStatus.textContent='串口需桌面 Chrome / Edge；当前可模拟体验';
-  return {update,snapshot:()=>({active,source:serialMode?'serial':usingVision()?'vision':'simulation',values:[...displayedValues],gesture:displayedGesture,visibleHands:hands.hands.length,holderId:hands.holderId,camera:camera.running,hand:{x:hand.x,y:hand.y},egg:{acquired:egg.acquired,x:egg.x,y:egg.y,roll:egg.roll,scale:egg.scale,lastSeen:egg.lastSeen}}),dispose(){disposed=true;abort.abort();stopCamera();void serial.disconnect();engine.clear();}};
+  return {update,snapshot:()=>({active,source:serialMode?'serial':usingVision()?'vision':'simulation',values:[...displayedValues],gesture:displayedGesture,visibleHands:hands.hands.length,holderId:hands.holderId,camera:camera.running,cameraDetails:camera.running?camera.stats??null:null,hand:{x:hand.x,y:hand.y},egg:{acquired:egg.acquired,x:egg.x,y:egg.y,roll:egg.roll,scale:egg.scale,lastSeen:egg.lastSeen}}),dispose(){disposed=true;abort.abort();stopCamera();void serial.disconnect();engine.clear();}};
 }
