@@ -28,6 +28,7 @@ export class CameraInput {
   private color={...yellowEgg};
   private egg:EggObservation|null=null;
   private eggSeen=-Infinity;
+  private eggDetection:Record<string,unknown>={};
   running=false;
   constructor(private video:HTMLVideoElement){}
   async start(){
@@ -77,8 +78,8 @@ export class CameraInput {
       const height=Math.round(384*this.video.videoHeight/this.video.videoWidth);
       if(this.frameCanvas.width!==384||this.frameCanvas.height!==height){this.frameCanvas.width=384;this.frameCanvas.height=height;}
       this.frameContext.drawImage(this.video,0,0,this.frameCanvas.width,this.frameCanvas.height);
-      const smallHeight=Math.round(192*this.video.videoHeight/this.video.videoWidth);
-      if(this.pixels.width!==192||this.pixels.height!==smallHeight){this.pixels.width=192;this.pixels.height=smallHeight;}
+      const smallHeight=Math.round(320*this.video.videoHeight/this.video.videoWidth);
+      if(this.pixels.width!==320||this.pixels.height!==smallHeight){this.pixels.width=320;this.pixels.height=smallHeight;}
       this.context.drawImage(this.frameCanvas,0,0,this.pixels.width,this.pixels.height);
       this.pendingPixels=this.context.getImageData(0,0,this.pixels.width,this.pixels.height);
       void createImageBitmap(this.frameCanvas).then(bitmap=>{
@@ -88,13 +89,14 @@ export class CameraInput {
     }
     return result;
   }
-  get stats(){return {backend:'worker',delegate:this.delegate,inferenceMs:Math.round(this.inferenceMs),inFlight:this.inFlight,videoReadyState:this.video.readyState,videoTimeSec:+this.video.currentTime.toFixed(3),videoPaused:this.video.paused,successfulSamples:this.successfulSamples,inferenceAgeMs:this.running&&this.resultAt?Math.round(performance.now()-this.resultAt):null};}
+  get stats(){return {eggDetection:this.eggDetection,backend:'worker',delegate:this.delegate,inferenceMs:Math.round(this.inferenceMs),inFlight:this.inFlight,videoReadyState:this.video.readyState,videoTimeSec:+this.video.currentTime.toFixed(3),videoPaused:this.video.paused,successfulSamples:this.successfulSamples,inferenceAgeMs:this.running&&this.resultAt?Math.round(performance.now()-this.resultAt):null};}
   sampleEgg(holder:TrackedHand|undefined,now:number,allHands?:TrackedHand[]):EggObservation|null {
     if(!this.running||this.video.readyState<2)return null;
-    const width=192,height=Math.max(8,Math.round(width*this.video.videoHeight/this.video.videoWidth));
+    const width=320,height=Math.max(8,Math.round(width*this.video.videoHeight/this.video.videoWidth));
     if(this.pixels.width!==width||this.pixels.height!==height){this.pixels.width=width;this.pixels.height=height;}
     if(!this.worker)this.context.drawImage(this.video,0,0,width,height);
-    const detect=()=>detectEgg(this.readyPixels??this.context.getImageData(0,0,width,height),allHands?.length?allHands:holder,now-this.eggSeen<800?this.egg:null,this.color);
+    this.eggDetection={};
+    const detect=()=>detectEgg(this.readyPixels??this.context.getImageData(0,0,width,height),allHands?.length?allHands:holder,now-this.eggSeen<400?this.egg:null,this.color,this.eggDetection);
     const result=diagnostics?diagnostics.measure('egg.detect',detect):detect();
     if(result){this.egg=result;this.eggSeen=now;}
     return result;

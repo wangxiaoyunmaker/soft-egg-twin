@@ -109,7 +109,7 @@ async function start() {
     if(reduced)for(let i=0;i<480;i++)sim.body.step(sim.stepSize);
     sim.body.previous.set(sim.body.position);
     twin=installTwin(world,sim,reset);
-    runtime.setState(()=>{const state=twin?.snapshot();return state?{active:state.active,source:state.source,gesture:state.gesture,visibleHands:state.visibleHands,camera:state.camera,cameraDetails:state.cameraDetails,interactionDiagnostics:state.interactionDiagnostics,headSource:state.headSource,visionEnabled:state.visionEnabled,preview:state.preview,eggAcquired:state.egg.acquired,eggAgeMs:Number.isFinite(state.egg.lastSeen)?Math.round(performance.now()-state.egg.lastSeen):null}:{};});
+    runtime.setState(()=>{const state=twin?.snapshot();return state?{active:state.active,source:state.source,gesture:state.gesture,visibleHands:state.visibleHands,camera:state.camera,cameraDetails:state.cameraDetails,interactionDiagnostics:state.interactionDiagnostics,headSource:state.headSource,visionEnabled:state.visionEnabled,preview:state.preview,eggPose:state.egg.poseDiagnostics,tiltEnabled:state.egg.tiltEnabled,eggAcquired:state.egg.acquired,eggAgeMs:Number.isFinite(state.egg.lastSeen)?Math.round(performance.now()-state.egg.lastSeen):null}:{};});
     status.className='status live';status.innerHTML='<b></b> WEBGPU · LIVE';message.hidden=true;
     element('#device-info').textContent=JSON.stringify({...world.deviceInfo,mesh:{nodes:sim.body.mesh.mass.length,tetrahedra:sim.body.mesh.volumes.length,triangles:world.skin.indices.length/3,quality:sim.body.mesh.quality}},null,2);
     world.renderer.setAnimationLoop((now:number)=>{

@@ -10,13 +10,14 @@ export function mountTwinPanel(){
         <div class="button-row"><button id="camera-connect">开启摄像头</button><button id="camera-center">当前位置归中</button></div>
         <div id="camera-preview" hidden><video id="hand-video" muted playsinline></video><canvas id="hand-overlay" aria-label="追踪预览，点击黄色蛋校准颜色"></canvas><span>绿色：定位手 · 桃色：另一只手 · 金框：蛋 · 蓝圈：头部范围</span></div>
         <label class="vision-toggle"><input id="egg-enabled" type="checkbox" checked>跟随黄色蛋的位置与倾斜</label>
+        <label class="vision-toggle"><input id="egg-tilt" type="checkbox" checked>同步摇摆（关闭后保持直立）</label>
         <p id="egg-status" class="hint" role="status">开启摄像头后，让黄色蛋露出轮廓。</p>
         <details class="gesture-guide"><summary>蛋的追踪与校准 <span>+</span></summary>
           <p>先把蛋竖直拿好，露出尽量完整的黄色轮廓，再点「当前位置归中」。金框锁定后，左右、上下移动和倾斜摇摆会同步到屏幕。蛋在画面里竖直时数字蛋也竖直；归中只调整位置与大小。</p>
           <p>识别不到时，可点击预览里蛋的黄色部分校准颜色，避开高光与手指。背景尽量不要有相似黄色物体。</p>
           <button id="egg-color-reset">恢复默认黄色</button><p id="egg-color-status" role="status"></p>
           <label class="vision-toggle"><input id="egg-scale" type="checkbox" checked>跟随轮廓大小，表现靠近与远离</label>
-          <p>倾斜来自画面内的长轴方向；大小只是距离的近似，捏变形、遮挡也会影响。纯色蛋的长轴自转、前后翻转无法可靠测出。丢失轮廓时保持最后姿态。</p>
+          <p>倾斜来自画面内的长轴方向；大小只是距离的近似，捏变形、遮挡也会影响。纯色蛋的长轴自转、前后翻转无法可靠测出。丢失轮廓时位置保持；角度超过一秒不可靠时会缓慢回正，这只是显示后备，不是测得的姿态。</p>
         </details>
         <div class="hand-tools"><button id="hand-swap">交换定位手</button><button id="gesture-calibrate">重置动作识别</button><output id="hand-count">0 / 2 只手</output></div>
         <label class="vision-toggle"><input id="vision-enabled" type="checkbox" checked>识别拍头、摸头和双手托举</label>

@@ -22,8 +22,11 @@ const hueDistance=(a:number,b:number)=>Math.min(Math.abs(a-b),360-Math.abs(a-b))
 
 /** Color-connected components near the supporting hand, with temporal association.
  * Pixel coordinates (not normalized x/y) keep PCA correct on non-square video. */
-export function detectEgg(frame:PixelFrame,holder:TrackedHand|TrackedHand[]|undefined,previous:EggObservation|null,color:EggColor=yellowEgg):EggObservation|null {
+export function detectEgg(frame:PixelFrame,holder:TrackedHand|TrackedHand[]|undefined,previous:EggObservation|null,color:EggColor=yellowEgg,debug?:Record<string,unknown>):EggObservation|null {
   const {width:w,height:h,data}=frame;
+  const rejected:Record<string,number>={};let components=0,eligibleCount=0;
+  const reject=(reason:string)=>{rejected[reason]=(rejected[reason]??0)+1;};
+  if(debug)Object.assign(debug,{width:w,height:h,rejected});
   const holders=Array.isArray(holder)?holder:holder?[holder]:[];
   if(w<8||h<8||data.length<w*h*4||(!holders.length&&!previous))return null;
   const mask=new Uint8Array(w*h),queue=new Int32Array(w*h);
@@ -44,23 +47,28 @@ export function detectEgg(frame:PixelFrame,holder:TrackedHand|TrackedHand[]|unde
       minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
       for(const n of [x>0?i-1:-1,x<w-1?i+1:-1,y>0?i-w:-1,y<h-1?i+w:-1])if(n>=0&&mask[n]){mask[n]=0;queue[tail++]=n;}
     }
-    if(tail<40||tail>w*h*.19||minX===0||minY===0||maxX===w-1||maxY===h-1)continue;
+    components++;
+    if(tail<40){reject('too-small');continue;}
+    if(tail>w*h*.19){reject('too-large');continue;}
+    if(minX===0||minY===0||maxX===w-1||maxY===h-1){reject('edge-clipped');continue;}
     const x=sx/tail,y=sy/tail,a=sxx/tail-x*x,b=syy/tail-y*y,c=sxy/tail-x*y;
     const spread=Math.sqrt((a-b)**2+4*c*c),large=(a+b+spread)/2,small=(a+b-spread)/2;
-    if(small<=0)continue;
+    if(small<=0){reject('flat');continue;}
     const major=4*Math.sqrt(large),minor=4*Math.sqrt(small),ratio=major/minor;
     const fill=tail/((maxX-minX+1)*(maxY-minY+1));
-    if(ratio>2.7||fill<.45||fill>.93||minor<6||major>w*.58)continue;
+    if(ratio>2.7||fill<.45||fill>.93||minor<6||major>w*.58){reject('shape');continue;}
     const eligible=regions.filter(r=>!holders.length||major>=r.palm*.3&&major<=r.palm*2.8);
     const nearHand=Math.min(...eligible.map(r=>Math.hypot(x-r.x,y-r.y)/r.palm));
-    if(nearHand>2)continue;
+    if(nearHand>2){reject('hand-distance-or-size');continue;}
     const continuity=previous?Math.hypot(x-previous.x*w,y-previous.y*h)/w:0;
-    if(previous&&(continuity>.16||major/(previous.major*w)<.65||major/(previous.major*w)>1.5))continue;
+    if(previous&&(continuity>.16||major/(previous.major*w)<.65||major/(previous.major*w)>1.5)){reject('association');continue;}
+    eligibleCount++;
     const score=Math.log(tail)-nearHand*1.5-continuity*30;
     if(score<=bestScore)continue;
     bestScore=score;
     best={x:x/w,y:y/h,angle:.5*Math.atan2(2*c,a-b),angleReliable:ratio>=1.18,major:major/w,minor:minor/w,bounds:{x:minX/w,y:minY/h,width:(maxX-minX+1)/w,height:(maxY-minY+1)/h}};
   }
+  if(debug)Object.assign(debug,{components,eligibleCount,selected:best?{x:best.x,y:best.y,major:best.major,minor:best.minor,angle:best.angle,angleReliable:best.angleReliable}:null});
   return best;
 }
 
@@ -73,16 +81,21 @@ export class EggMotion {
   private candidate:EggObservation|null=null;
   private candidateAt=-Infinity;
   private stable=0;
+  private tiltSeen=-Infinity;
+  private tiltMajor=0;
+  private tiltCandidate:{tilt:number;count:number}|null=null;
+  private poseReason='waiting';
+  get poseDiagnostics(){return {reason:this.poseReason,tiltSeen:this.tiltSeen,targetRoll:this.target.roll,observation:this.observation};}
   get acquired(){return this.origin!==null;}
-  reset(){this.x=this.y=this.roll=0;this.scale=1;this.lastSeen=this.candidateAt=-Infinity;this.origin=this.observation=this.candidate=null;this.stable=0;this.target={x:0,y:0,roll:0,scale:1};}
+  reset(){this.tiltSeen=-Infinity;this.tiltMajor=0;this.tiltCandidate=null;this.poseReason='waiting';this.x=this.y=this.roll=0;this.scale=1;this.lastSeen=this.candidateAt=-Infinity;this.origin=this.observation=this.candidate=null;this.stable=0;this.target={x:0,y:0,roll:0,scale:1};}
   receive(value:EggObservation|null,now:number){
-    if(!value){this.stable=0;this.candidate=null;return;}
+    if(!value){this.poseReason='no-contour';this.stable=0;this.candidate=null;this.tiltCandidate=null;return;}
     // Require three nearby detections before acquiring/reacquiring, avoiding isolated yellow noise.
     const gap=now-this.lastSeen;
     if(!this.acquired||gap>400){
       const close=this.candidate&&now-this.candidateAt<400&&Math.hypot(value.x-this.candidate.x,value.y-this.candidate.y)<.07;
       this.stable=close?this.stable+1:1;this.candidate=value;this.candidateAt=now;
-      if(this.stable<3)return;
+      if(this.stable<3){this.poseReason='acquiring';return;}
     }
     this.origin??={...value};
     this.target.x=clamp((this.origin.x-value.x)*4,-1,1);
@@ -93,8 +106,18 @@ export class EggMotion {
       let tilt=value.angle-Math.PI/2;
       while(tilt>Math.PI/2)tilt-=Math.PI;
       while(tilt<-Math.PI/2)tilt+=Math.PI;
-      this.target.roll=Math.abs(tilt)<Math.PI/60?0:tilt;
+      tilt=Math.abs(tilt)<Math.PI/60?0:tilt;
+      const jump=Math.abs(tilt-this.target.roll)>Math.PI/5;
+      const clipped=jump&&this.tiltMajor>0&&value.major<this.tiltMajor*.8;
+      if(clipped){this.poseReason='partial-contour';this.tiltCandidate=null;}
+      else if(jump&&Math.abs(tilt)>Math.PI/60&&Number.isFinite(this.tiltSeen)){
+        const consistent=this.tiltCandidate&&Math.abs(tilt-this.tiltCandidate.tilt)<.15;
+        this.tiltCandidate={tilt,count:consistent?this.tiltCandidate!.count+1:1};this.poseReason='confirming-angle';
+        if(this.tiltCandidate.count>=3){this.target.roll=tilt;this.tiltSeen=now;this.tiltMajor=value.major;this.poseReason='measured';this.tiltCandidate=null;}
+      }else{this.target.roll=tilt;this.tiltSeen=now;this.tiltMajor=value.major;this.poseReason='measured';this.tiltCandidate=null;}
+
     }
+    else this.poseReason='round-contour';
     // Long axis changes less than visible colored area when fingers partly cover the egg.
     this.target.scale=clamp(value.major/this.origin.major,.7,1.4);
     this.observation=value;this.lastSeen=now;
@@ -105,9 +128,14 @@ export class EggMotion {
     return true;
   }
   update(dt:number,now:number){
+    if(now-this.tiltSeen>1000){
+      // This is a neutral display fallback, not a measured physical orientation.
+      this.roll+=(0-this.roll)*(1-Math.exp(-clamp(dt,0,.1)*3));
+      this.poseReason='neutral-fallback';
+    }
     if(now-this.lastSeen>400)return;
     const k=1-Math.exp(-clamp(dt,0,.1)*12);
     this.x+=(this.target.x-this.x)*k;this.y+=(this.target.y-this.y)*k;
-    this.roll+=(this.target.roll-this.roll)*k;this.scale+=(this.target.scale-this.scale)*k;
+    if(now-this.tiltSeen<=1000)this.roll+=(this.target.roll-this.roll)*k;this.scale+=(this.target.scale-this.scale)*k;
   }
 }

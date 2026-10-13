@@ -73,5 +73,25 @@ test('centering changes translation and scale but never introduces a persistent 
   m.receive(observe(),290);settle(m,290);near(m.roll,0);
 });
 test('returning to a vertical undirected axis removes accumulated rotation',()=>{
-  const m=new EggMotion();acquire(m);let t=210;for(const angle of [1.9,2.5,3.0,-.4,0,.4,1.1,Math.PI/2]){m.receive(observe({angle}),t);settle(m,t);t+=70;}near(m.roll,0);
+  const m=new EggMotion();acquire(m);let t=210;for(const angle of [1.9,2.5,3.0,-.4,0,.4,1.1,Math.PI/2]){m.receive(observe({angle}),t);settle(m,t);t+=70;}assert.equal(m.poseDiagnostics.targetRoll,0);settle(m,t-70);near(m.roll,0);
+});
+
+test('a shortened horizontal cap cannot replace the upright whole-egg orientation',()=>{
+  const m=new EggMotion();acquire(m);
+  const cap={...observe(),angle:0,major:observe().major*.65};
+  for(const t of [210,280,350]){m.receive(cap,t);settle(m,t);near(m.roll,0);assert.equal(m.poseDiagnostics.reason,'partial-contour');}
+});
+test('a single abrupt axis outlier is ignored but a full rotated egg is accepted after confirmation',()=>{
+  const m=new EggMotion();acquire(m);m.receive(observe({angle:0}),210);settle(m,210);near(m.roll,0);
+  m.receive(observe(),280);settle(m,280);near(m.roll,0);
+  for(const t of [350,420,490])m.receive(observe({angle:Math.PI/2+.9}),t);settle(m,490);near(m.roll,.9);
+});
+test('missing or round contours cannot freeze a wrong angle indefinitely; position stays held during neutral fallback',()=>{
+  const m=new EggMotion();acquire(m);m.receive(observe({angle:Math.PI/2+.3,x:.55}),210);settle(m,210);const x=m.x;
+  m.receive(null,300);for(let i=0;i<80;i++)m.update(.016,1500+i*16);near(m.roll,0,.012);near(m.x,x,.001);assert.equal(m.poseDiagnostics.reason,'neutral-fallback');
+  for(const t of [3000,3070,3140])m.receive(observe(),t);settle(m,3140);near(m.roll,0);assert.equal(m.poseDiagnostics.reason,'measured');
+});
+test('segmentation reports candidate rejection reasons without capturing frames or landmarks',()=>{
+  const debug:Record<string,unknown>={};detectEgg(eggFrame({x:.75}),translateHand(supportHand(),.25,0),observe(),undefined,debug);
+  assert.ok((debug.rejected as Record<string,number>).association>0);assert.equal(debug.selected,null);assert.equal(debug.width,192);
 });

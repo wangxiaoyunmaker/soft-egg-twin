@@ -24,6 +24,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
   const serial=new SerialInput(),camera:TwinCamera=cameraOverride??new CameraInput(element<HTMLVideoElement>('#hand-video')),hand=new HandPosition(),hands=new TwoHandTracker(),vision=new EggInteractions(),egg=new EggMotion(),anchor=new HeadAnchor();
   let markPending=false;
   const visionToggle=element<HTMLInputElement>('#vision-enabled');
+  const tiltToggle=element<HTMLInputElement>('#egg-tilt');
   const eggToggle=element<HTMLInputElement>('#egg-enabled'),eggScale=element<HTMLInputElement>('#egg-scale');
   let lastHolderId:number|null=null;
   let displayedValues:number[]=[],displayedGesture:Gesture='idle';
@@ -45,7 +46,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
     element('#hand-swap').textContent=hands.holder?'交换定位手':'用可见手定位';
     element<HTMLButtonElement>('#gesture-calibrate').disabled=!camera.running||!hands.hands.length;
     visionToggle.disabled=!camera.running;
-    eggToggle.disabled=!camera.running;eggScale.disabled=!camera.running||!eggToggle.checked;
+    eggToggle.disabled=!camera.running;tiltToggle.disabled=!camera.running||!eggToggle.checked;eggScale.disabled=!camera.running||!eggToggle.checked;
     element<HTMLButtonElement>('#egg-color-reset').disabled=!camera.running;
     element<HTMLInputElement>('#gesture-sensitivity').disabled=!camera.running;
     element<HTMLButtonElement>('#head-mark').disabled=!camera.running;
@@ -229,7 +230,7 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
     const peak=visual?visionEngine.peak:engine.peak;
     const eggActive=camera.running&&eggToggle.checked&&egg.acquired;
     world.setTwinInput(true,eggActive?egg.x:hand.x,eggActive?egg.y:hand.y,displayedValues,displayedGesture);
-    world.setTwinPose(eggActive?egg.roll:0,eggActive&&eggScale.checked?egg.scale:1);
+    world.setTwinPose(eggActive&&tiltToggle.checked?egg.roll:0,eggActive&&eggScale.checked?egg.scale:1);
     if(now-lastRead>80){
       element('#gesture-label').textContent=labels[displayedGesture];element('#pressure-peak').textContent=`${Math.round(peak*100)}%`;
       element('#pressure-peak').setAttribute('aria-label',visual?'视觉反馈强度，非实测压力':'归一化压力');
@@ -239,8 +240,8 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
         const count=now-visionTime()<400?hands.hands.length:0;
         element('#hand-count').textContent=`${count} / 2 只手`;
         cameraStatus.textContent=now-hand.lastSeen<400?`正在跟随托蛋手 · ${count} 只手可见`:'托蛋手暂时不可见 · 位置保持';
-        if(eggActive)cameraStatus.textContent=`黄色蛋追踪 · ${count} 只手可见`;
-        element('#egg-status').textContent=!eggToggle.checked?(visionToggle.checked?'位置与倾斜跟随已关闭 · 仍识别头部动作':'已关闭蛋体追踪 · 跟随定位手位置'):!egg.acquired?'寻找手边的黄色蛋 · 暂由托蛋手控制位置':now-egg.lastSeen>400?'轮廓暂时丢失 · 保持最后位置与倾斜':`黄色蛋已锁定 · 倾斜 ${Math.round(egg.roll*180/Math.PI)}° · ${eggScale.checked?`大小 ${egg.scale.toFixed(2)}×`:'大小固定'}${egg.observation?.angleReliable?'':' · 轮廓接近圆形，倾斜保持'}`;
+        if(eggActive)cameraStatus.textContent=`${now-egg.lastSeen<=400?'黄色蛋追踪':'蛋轮廓丢失'} · ${count} 只手可见`;
+        element('#egg-status').textContent=!eggToggle.checked?(visionToggle.checked?'位置与倾斜跟随已关闭 · 仍识别头部动作':'已关闭蛋体追踪 · 跟随定位手位置'):!egg.acquired?'寻找手边的黄色蛋 · 暂由托蛋手控制位置':now-egg.lastSeen>400?'轮廓丢失 · 位置保持，倾斜将缓慢回正（非实测）':`黄色蛋已锁定 · 倾斜 ${Math.round(egg.roll*180/Math.PI)}° · ${eggScale.checked?`大小 ${egg.scale.toFixed(2)}×`:'大小固定'}${!tiltToggle.checked?' · 已保持直立':egg.poseDiagnostics.reason==='neutral-fallback'?' · 角度不可靠，显示回正（非实测）':egg.poseDiagnostics.reason==='partial-contour'?' · 轮廓残缺，倾斜暂缓':egg.poseDiagnostics.reason==='confirming-angle'?' · 等待角度确认':egg.observation?.angleReliable?'':' · 轮廓接近圆形，角度待确认'}`;
         element('#vision-status').textContent=markPending?'请点击蛋的最上端，设置头部参考':feedback.message;
         const d=vision.debug;
         const support=d.support as {reason:string;elapsedMs:number;requiredMs:number}|undefined;
@@ -258,5 +259,5 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
   function visionTime(){return Math.max(-Infinity,...hands.hands.map(h=>h.lastSeen));}
   buildSliders();setMode(true);syncAvailability();
   if(!SerialInput.supported())pressureStatus.textContent='串口需桌面 Chrome / Edge；当前可模拟体验';
-  return {update,snapshot:()=>({active,source:serialMode?'serial':demo?'preview':usingVision()?'vision':'simulation',values:[...displayedValues],gesture:displayedGesture,visibleHands:hands.hands.length,holderId:hands.holderId,camera:camera.running,cameraDetails:camera.running?camera.stats??null:null,interactionDiagnostics:vision.debug,headSource:anchor.source,visionEnabled:visionToggle.checked,preview:demo?.kind??null,hand:{x:hand.x,y:hand.y},egg:{acquired:egg.acquired,x:egg.x,y:egg.y,roll:egg.roll,scale:egg.scale,lastSeen:egg.lastSeen}}),dispose(){disposed=true;abort.abort();stopCamera();void serial.disconnect();engine.clear();}};
+  return {update,snapshot:()=>({active,source:serialMode?'serial':demo?'preview':usingVision()?'vision':'simulation',values:[...displayedValues],gesture:displayedGesture,visibleHands:hands.hands.length,holderId:hands.holderId,camera:camera.running,cameraDetails:camera.running?camera.stats??null:null,interactionDiagnostics:vision.debug,headSource:anchor.source,visionEnabled:visionToggle.checked,preview:demo?.kind??null,hand:{x:hand.x,y:hand.y},egg:{tiltEnabled:tiltToggle.checked,poseDiagnostics:egg.poseDiagnostics,acquired:egg.acquired,x:egg.x,y:egg.y,roll:egg.roll,scale:egg.scale,lastSeen:egg.lastSeen}}),dispose(){disposed=true;abort.abort();stopCamera();void serial.disconnect();engine.clear();}};
 }
