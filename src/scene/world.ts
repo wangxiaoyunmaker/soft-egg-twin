@@ -83,6 +83,9 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
   let pressureZones:Zone[]=[],pressureSkin:PressureSkin|undefined;
   let twinActive=false,twinX=0,twinY=0,pressureValues:number[]=[],gesture:Gesture='idle';
   const twinOffset=new THREE.Vector3();
+  let twinRoll=0,twinScale=1;
+  const twinRotation=new THREE.Quaternion(),viewRoll=new THREE.Quaternion(),viewInverse=new THREE.Quaternion(),viewAxis=new THREE.Vector3(0,0,1),pivot=new THREE.Vector3(),rotatedPivot=new THREE.Vector3();
+  function setTwinPose(roll:number,scale:number){twinRoll=Number.isFinite(roll)?roll:0;twinScale=Number.isFinite(scale)?Math.max(.7,Math.min(1.4,scale)):1;}
   function configurePressure(zones:Zone[]){pressureZones=zones;pressureSkin=new PressureSkin(skin.rest,sim.body.mesh.height,zones);}
   function setTwinInput(active:boolean,x:number,y:number,values:number[],action:Gesture){twinActive=active;twinX=x;twinY=y;pressureValues=values;gesture=action;}
   function rebuildSkin() {
@@ -157,14 +160,22 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
     bodyColor.value.lerp(targetBody,k);topColor.value.lerp(targetTop,k);cutColor.value.lerp(targetCut,k);
     if(twinActive){
       twinOffset.set(twinX*.95,twinY*.65,0).applyQuaternion(camera.quaternion);twinOffset.y+=.8;
-    }else twinOffset.set(0,0,0);
+      // Roll around the egg's center in the camera plane; pressure zones and face rotate with it.
+      viewInverse.copy(camera.quaternion).invert();viewRoll.setFromAxisAngle(viewAxis,twinRoll);
+      twinRotation.copy(camera.quaternion).multiply(viewRoll).multiply(viewInverse);
+      pivot.set(0,sim.body.mesh.height*.5,0);
+      rotatedPivot.copy(pivot).multiplyScalar(twinScale).applyQuaternion(twinRotation);
+      twinOffset.add(pivot).sub(rotatedPivot);
+      pudding.quaternion.copy(twinRotation);pudding.scale.setScalar(twinScale);
+    }else {twinOffset.set(0,0,0);pudding.quaternion.identity();pudding.scale.setScalar(1);}
+    wire.quaternion.copy(pudding.quaternion);wire.scale.copy(pudding.scale);
     pudding.position.copy(twinOffset);wire.position.copy(twinOffset);
     face.update(dt,serving!==null,twinActive?Math.max(0,...pressureValues):0,twinActive&&gesture==='stroke');
   }
   function dispose(){observer.disconnect();renderer.setAnimationLoop(null);finishServing();face.dispose();pudding.geometry.dispose();material.dispose();wire.material.dispose();steel.dispose();cutlery.dispose();ground.geometry.dispose();ground.material.dispose();grid.geometry.dispose();(grid.material as THREE.Material).dispose();envTarget.dispose();light.shadow.dispose();renderer.dispose();}
   const info=adapter.info;
   return {
-    renderer,scene,camera,pudding,wire,spoon,spoonTarget,flavor,update,dispose,serve,configurePressure,setTwinInput,
+    renderer,scene,camera,pudding,wire,spoon,spoonTarget,flavor,update,dispose,serve,configurePressure,setTwinInput,setTwinPose,
     resetFace:()=>{finishServing();face.reset();},
     get expression(){return face.name;},
     get skin(){return skin;},

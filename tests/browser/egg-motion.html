@@ -1,0 +1,31 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>黄色蛋追踪测试 · 合成像素</title>
+<div id="app"></div><section style="position:fixed;left:14px;bottom:14px;z-index:20;background:#fff8df;padding:12px;border:1px solid #d3b87a;border-radius:10px;font:12px sans-serif;max-width:470px"><strong>开发测试：生成的黄色蛋图像，未开启摄像头</strong><div style="display:flex;gap:6px;margin:8px 0"><button data-action="idle">静止基线</button><button data-action="move">移动与倾斜</button><button data-action="near">靠近回放</button><button data-action="lost">遮挡回放</button></div><output id="replay-result">等待连接</output></section>
+<script type="module">
+import '../../src/styles.css';
+import { mountPanel } from '../../src/ui/panel.ts';
+import { mountTwinPanel } from '../../src/twin/ui.ts';
+import { installTwin } from '../../src/twin/controller.ts';
+import { Simulation } from '../../src/physics/simulation.ts';
+import { createWorld } from '../../src/scene/world.ts';
+import { CameraInput } from '../../src/twin/camera.ts';
+import { supportHand,actorAt,translateHand } from '../fixtures/hands.ts';
+import { eggFrame } from '../fixtures/egg.ts';
+mountPanel();mountTwinPanel();
+const preview=document.createElement('canvas');preview.width=192;preview.height=144;preview.style.cssText='position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)';
+const video=document.querySelector('#hand-video'),capture=new CameraInput(video);let stream=null;
+const ctx=preview.getContext('2d'),sim=new Simulation(),world=await createWorld(document.querySelector('#scene'),sim);
+let action='idle',started=0,lastFrame=0,last=0,frame=eggFrame();
+ctx.putImageData(new ImageData(frame.data,frame.width,frame.height),0,0);
+const camera={running:false,async start(){stream=preview.captureStream(30);video.srcObject=stream;this.running=true;started=performance.now();await video.play();capture.running=true;},stop(){capture.stop();stream?.getTracks().forEach(t=>t.stop());this.running=false;},sample(now){
+  if(!this.running||now-lastFrame<65)return null;lastFrame=now;
+  const t=Math.min(1,(now-started)/1000),m=action==='move'?t:0;
+  frame=eggFrame({x:.5+m*.08,y:.46-m*.07,angle:Math.PI/2+m*.55,scale:action==='near'?1+t*.3:1,hidden:action==='lost'});
+  ctx.putImageData(new ImageData(frame.data,frame.width,frame.height),0,0);
+  return [translateHand(supportHand(),m*.08,-m*.07),translateHand(actorAt(1.2,-.1),m*.08,-m*.07)];
+},sampleEgg(holder,now){return capture.sampleEgg(holder,now);},pickEggColor(x,y){return capture.pickEggColor(x,y);},resetEggColor(){capture.resetEggColor();}};
+const twin=installTwin(world,sim,()=>{sim.reset();world.resetFace();},camera);
+document.querySelector('#scene-message').hidden=true;document.querySelector('#gpu-status').textContent='WEBGPU · SYNTHETIC PIXELS';
+for(const button of document.querySelectorAll('[data-action]'))button.addEventListener('click',()=>{action=button.dataset.action;started=performance.now();});
+world.renderer.setAnimationLoop(now=>{const dt=last?Math.min(.1,(now-last)/1000):1/60;last=now;twin.update(dt,now);sim.advance(dt);world.update(dt);world.renderer.render(world.scene,world.camera);const state=twin.snapshot();document.querySelector('#replay-result').textContent=`locked ${state.egg.acquired} · x ${state.egg.x.toFixed(2)} y ${state.egg.y.toFixed(2)} · roll ${(state.egg.roll*180/Math.PI).toFixed(1)}° · scale ${state.egg.scale.toFixed(2)} · mesh ${world.pudding.scale.x.toFixed(2)} · qz ${world.pudding.quaternion.z.toFixed(2)}`;});
+window.addEventListener('pagehide',()=>{twin.dispose();world.dispose();},{once:true});
+</script></html>
