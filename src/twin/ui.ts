@@ -21,11 +21,12 @@ export function mountTwinPanel(){
         <div class="hand-tools"><button id="hand-swap">交换定位手</button><button id="gesture-calibrate">重置动作识别</button><output id="hand-count">0 / 2 只手</output></div>
         <label class="vision-toggle"><input id="vision-enabled" type="checkbox" checked>识别拍头、摸头和双手托举</label>
         <div class="button-row"><button id="head-mark">标记蛋头</button><button id="head-auto">恢复自动定位</button></div>
+        <p id="support-debug" class="hint" role="status">拥抱：等待双手进入画面</p>
         <p id="interaction-debug" class="hint" role="status">等待动作诊断</p>
         <p id="vision-status" class="hint" role="status">先让黄色蛋露出轮廓，等金框锁定，再进行三种动作。</p>
         <details class="gesture-guide"><summary>三种动作怎么做 <span>+</span></summary>
-          <p>拍头：用一只手从上方靠近蛋头，短促拍下，再抬起。摸头：用手指沿蛋的上端缓慢来回轻扫。双手托住：两只手放在蛋下方，稳定托住片刻。</p>
-          <p>可以一只手拿蛋，另一只手做拍头或摸头。两只手仅仅出现在画面里，不会算作托举。请露出黄色轮廓，摄像头只估计动作与接触。遮挡严重时可点「标记蛋头」，再点击预览中蛋的最上端；手动参考随托蛋手估计位置，移动或换手后请重新标记。</p>
+          <p>拍头：用一只手从上方靠近蛋头，短促拍下，再抬起。摸头：用手指沿蛋的上端缓慢来回轻扫。双手托住：两只手从蛋下方或两侧包住，稳定托抱约四分之一秒。</p>
+          <p>可以一只手拿蛋，另一只手做拍头或摸头。两只手仅仅出现在画面里，不会算作托举。双手托抱优先于轻扫表情。请露出黄色轮廓，摄像头只估计动作与接触。遮挡严重时可点「标记蛋头」，再点击预览中蛋的最上端；手动参考随托蛋手估计位置，移动或换手后请重新标记。</p>
           <label class="slider-label" for="gesture-sensitivity">识别灵敏度 <output id="gesture-sensitivity-value">1.0×</output></label><input id="gesture-sensitivity" type="range" min="60" max="180" value="100">
         </details>
       </section>

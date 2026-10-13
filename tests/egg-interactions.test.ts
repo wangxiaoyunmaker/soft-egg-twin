@@ -71,3 +71,38 @@ test('cradling can resume after a long sample gap',()=>{
   for(const t of [0,420,1500,1920])v.sample([a,b],egg,zones,t);
   assert.equal(read(v,1920).gesture,'cradle');
 });
+
+test('a short lift and small quick descent can trigger a light pat without a high raise',()=>{
+  const v=new EggInteractions();v.sample([headHand(1.65)],egg,zones,0);v.sample([headHand(1.38)],egg,zones,150);assert.equal(read(v,150).gesture,'pat');
+  for(let t=300;t<=1050;t+=150)v.sample([headHand(1.38)],egg,zones,t);assert.equal(read(v,1050).gesture,'idle');
+});
+test('a tiny crown jitter does not count as a pat',()=>{
+  const v=new EggInteractions();for(let i=0;i<14;i++){v.sample([headHand(1.55+(i%2?-.06:0))],egg,zones,i*150);assert.equal(read(v,i*150).gesture,'idle');}
+});
+test('two hands wrapping the lower sides of the egg can cradle with a palm slightly above centre',()=>{
+  const v=new EggInteractions(),a=translateHand(supportHand(),-.05,-.15),b={...translateHand(supportHand(),.05,-.08),id:2};
+  v.sample([a,b],egg,zones,0);assert.equal(read(v,0).gesture,'idle');v.sample([a,b],egg,zones,280);assert.equal(read(v,280).gesture,'cradle');
+});
+test('two palms above the egg do not count as hugging',()=>{
+  const v=new EggInteractions(),a=translateHand(supportHand(),-.05,-.3),b={...translateHand(supportHand(),.05,-.3),id:2};
+  for(const t of [0,150,300,450])v.sample([a,b],egg,zones,t);assert.notEqual(read(v,450).gesture,'cradle');
+});
+test('brief boundary noise does not restart the entire cradling dwell, but one hand cannot sustain it',()=>{
+  const v=new EggInteractions(),a=translateHand(supportHand(),-.05,0),b={...translateHand(supportHand(),.05,0),id:2};
+  v.sample([a,b],egg,zones,0);v.sample([a,translateHand(b,0,-.4)],egg,zones,140);v.sample([a,b],egg,zones,280);assert.equal(read(v,280).gesture,'cradle');v.sample([a],egg,zones,350);assert.notEqual(read(v,350).gesture,'cradle');
+});
+
+test('stable two-hand support keeps the hug expression when holding fingertips sweep along the crown',()=>{
+  const v=new EggInteractions(),a=translateHand(supportHand(),-.05,0),base={...translateHand(supportHand(),.05,0),id:2};
+  for(let i=0;i<9;i++){
+    const b={...base,landmarks:base.landmarks.map(p=>({...p}))},moving=headHand(1.05,-.7+i*.18);
+    for(const id of [4,8,12,16,20])b.landmarks[id]=moving.landmarks[id];
+    v.sample([a,b],egg,zones,i*70);
+  }
+  assert.equal(read(v,560).gesture,'cradle');
+});
+test('the sensitivity control also changes the hugging dwell threshold',()=>{
+  const a=translateHand(supportHand(),-.05,0),b={...translateHand(supportHand(),.05,0),id:2},fast=new EggInteractions(),slow=new EggInteractions();fast.sensitivity=1.8;slow.sensitivity=.6;
+  for(const v of [fast,slow])for(const t of [0,200])v.sample([a,b],egg,zones,t);
+  assert.equal(read(fast,200).gesture,'cradle');assert.equal(read(slow,200).gesture,'idle');
+});

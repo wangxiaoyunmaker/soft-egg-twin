@@ -13,6 +13,7 @@ import { element } from '../ui/panel.ts';
 import type { World } from '../scene/world.ts';
 import type { Simulation } from '../physics/simulation.ts';
 const labels:Record<Gesture,string>={idle:'等你碰一碰',touch:'轻轻触碰',pinch:'被捏住了',hold:'持续握紧',stroke:'像是在抚摸',press:'正在按压',pat:'被拍拍头了',headStroke:'正在享受摸头',cradle:'被两只手稳稳托住'};
+const supportLabels:Record<string,string>={'need-two-hands':'需要两只手','palms-outside-support':'请把双手靠近蛋的两侧或下方','palms-too-close':'两只掌心太靠近','palms-too-high-or-unbalanced':'双手偏高或上下差距过大',waiting:'请稳定托抱片刻',ready:'已识别托抱'};
 const reasonLabels:Record<string,string>={'no-head':'蛋头未定位','no-hands':'没有看到手','outside-head':'动作手在头部范围外','insufficient-motion':'移动不足','approaching':'正在靠近',pat:'已识别拍头',headStroke:'已识别摸头',cradle:'已识别双手托举',reset:'等待动作',waiting:'等待动作'};
 const storageKey='soft-egg-twin-config-v1';
 type TwinCamera=Pick<CameraInput,'running'|'start'|'sample'|'stop'>&Partial<Pick<CameraInput,'sampleEgg'|'pickEggColor'|'resetEggColor'|'stats'>>;
@@ -242,6 +243,8 @@ export function installTwin(world:World,sim:Simulation,resetLab:()=>void,cameraO
         element('#egg-status').textContent=!eggToggle.checked?(visionToggle.checked?'位置与倾斜跟随已关闭 · 仍识别头部动作':'已关闭蛋体追踪 · 跟随定位手位置'):!egg.acquired?'寻找手边的黄色蛋 · 暂由托蛋手控制位置':now-egg.lastSeen>400?'轮廓暂时丢失 · 保持最后位置与倾斜':`黄色蛋已锁定 · 倾斜 ${Math.round(egg.roll*180/Math.PI)}° · ${eggScale.checked?`大小 ${egg.scale.toFixed(2)}×`:'大小固定'}${egg.observation?.angleReliable?'':' · 轮廓接近圆形，倾斜保持'}`;
         element('#vision-status').textContent=markPending?'请点击蛋的最上端，设置头部参考':feedback.message;
         const d=vision.debug;
+        const support=d.support as {reason:string;elapsedMs:number;requiredMs:number}|undefined;
+        element('#support-debug').textContent=support?`拥抱：${supportLabels[support.reason]??support.reason}${support.reason==='waiting'?`（${support.elapsedMs}/${support.requiredMs}ms）`:''}`:'拥抱：等待蛋和双手进入画面';
         element('#interaction-debug').textContent=`${anchor.source.startsWith('manual')?'手动参考（位置随托蛋手估计）':anchor.source==='measured'?'蛋头自动定位':anchor.source==='short-occlusion'?'短暂遮挡：保持参考':'蛋头未定位'} · ${reasonLabels[d.reason]??d.reason} · 间隔 ${d.sampleGapMs}ms`;
       }
       if(serialMode){
