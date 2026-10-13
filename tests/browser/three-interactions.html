@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>三种蛋蛋交互回放 · 合成输入</title>
-<div id="app"></div><section style="position:fixed;left:14px;bottom:14px;z-index:20;background:#fff8df;padding:12px;border:1px solid #d3b87a;border-radius:10px;font:12px sans-serif;max-width:450px"><strong>开发测试：合成黄色蛋与双手，未开启摄像头</strong><div style="display:flex;gap:6px;margin:8px 0"><button data-action="idle">静止</button><button data-action="pat">拍头回放</button><button data-action="stroke">摸头回放</button><button data-action="cradle">双手托举回放</button></div><output id="replay-result">等待连接</output></section>
+<div id="app"></div><section style="position:fixed;left:14px;bottom:14px;z-index:20;background:#fff8df;padding:12px;border:1px solid #d3b87a;border-radius:10px;font:12px sans-serif;max-width:450px"><strong>开发测试：合成黄色蛋与双手，未开启摄像头</strong><div style="display:flex;gap:6px;margin:8px 0"><button data-action="idle">静止</button><button data-action="pat">拍头回放</button><button data-action="stroke">摸头回放</button><button data-action="cradle">双手托举回放</button></div><output id="replay-result">等待连接</output><pre id="replay-history" style="white-space:pre-wrap"></pre></section>
 <script type="module">
 import '../../src/styles.css';
 import { mountPanel } from '../../src/ui/panel.ts';
@@ -14,7 +14,7 @@ mountPanel();mountTwinPanel();
 const sim=new Simulation(),world=await createWorld(document.querySelector('#scene'),sim),video=document.querySelector('#hand-video'),capture=new CameraInput(video);
 const source=document.createElement('canvas');source.width=192;source.height=144;const ctx=source.getContext('2d');
 function paint(){ctx.fillStyle='#46534b';ctx.fillRect(0,0,192,144);ctx.fillStyle='#f1ca1e';ctx.beginPath();ctx.ellipse(egg.x*192,egg.y*144,egg.minor*96,egg.major*96,0,0,Math.PI*2);ctx.fill();}
-paint();let action='idle',started=0,lastSample=0,last=0,stream=null;
+paint();const verified=new Set();let action='idle',started=0,lastSample=0,last=0,stream=null;
 const camera={running:false,async start(){stream=source.captureStream(30);video.srcObject=stream;this.running=true;started=performance.now();await video.play();capture.running=true;},stop(){capture.stop();stream?.getTracks().forEach(t=>t.stop());this.running=false;},sample(now){
   if(!this.running||now-lastSample<65)return null;lastSample=now;paint();
   const t=(now-started)/1000;
@@ -26,6 +26,6 @@ const camera={running:false,async start(){stream=source.captureStream(30);video.
 const twin=installTwin(world,sim,()=>{sim.reset();world.resetFace();},camera);
 document.querySelector('#scene-message').hidden=true;document.querySelector('#gpu-status').textContent='WEBGPU · SYNTHETIC TEST';
 for(const button of document.querySelectorAll('[data-action]'))button.addEventListener('click',()=>{action=button.dataset.action;started=performance.now();});
-world.renderer.setAnimationLoop(now=>{const dt=last?Math.min(.1,(now-last)/1000):1/60;last=now;twin.update(dt,now);sim.advance(dt);world.update(dt);world.renderer.render(world.scene,world.camera);const s=twin.snapshot();document.querySelector('#replay-result').textContent=`${s.visibleHands} hands · ${s.gesture} → ${world.expression}`;});
+world.renderer.setAnimationLoop(now=>{const dt=last?Math.min(.1,(now-last)/1000):1/60;last=now;twin.update(dt,now);sim.advance(dt);world.update(dt);world.renderer.render(world.scene,world.camera);const s=twin.snapshot();document.querySelector('#replay-result').textContent=`${s.visibleHands} hands · ${s.gesture} → ${world.expression}`;if(s.gesture!=='idle')verified.add(`${s.gesture} → ${world.expression}`);document.querySelector('#replay-history').textContent=[...verified].join(' / ')+'\n'+JSON.stringify(s.interactionDiagnostics);});
 window.addEventListener('pagehide',()=>{twin.dispose();world.dispose();},{once:true});
 </script></html>

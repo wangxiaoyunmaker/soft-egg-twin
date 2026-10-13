@@ -8,7 +8,7 @@ export function mountTwinPanel(){
       <section class="connection-section" aria-label="手部追踪">
         <div class="section-label"><span>01 / 拍头 · 摸头 · 双手托举</span><output id="camera-status" role="status">摄像头未开启</output></div>
         <div class="button-row"><button id="camera-connect">开启摄像头</button><button id="camera-center">当前位置归中</button></div>
-        <div id="camera-preview" hidden><video id="hand-video" muted playsinline></video><canvas id="hand-overlay" aria-label="追踪预览，点击黄色蛋校准颜色"></canvas><span>绿色：定位手 · 桃色：另一只手 · 金框：蛋</span></div>
+        <div id="camera-preview" hidden><video id="hand-video" muted playsinline></video><canvas id="hand-overlay" aria-label="追踪预览，点击黄色蛋校准颜色"></canvas><span>绿色：定位手 · 桃色：另一只手 · 金框：蛋 · 蓝圈：头部范围</span></div>
         <label class="vision-toggle"><input id="egg-enabled" type="checkbox" checked>跟随黄色蛋的位置与倾斜</label>
         <p id="egg-status" class="hint" role="status">开启摄像头后，让黄色蛋露出轮廓。</p>
         <details class="gesture-guide"><summary>蛋的追踪与校准 <span>+</span></summary>
@@ -20,10 +20,12 @@ export function mountTwinPanel(){
         </details>
         <div class="hand-tools"><button id="hand-swap">交换定位手</button><button id="gesture-calibrate">重置动作识别</button><output id="hand-count">0 / 2 只手</output></div>
         <label class="vision-toggle"><input id="vision-enabled" type="checkbox" checked>识别拍头、摸头和双手托举</label>
+        <div class="button-row"><button id="head-mark">标记蛋头</button><button id="head-auto">恢复自动定位</button></div>
+        <p id="interaction-debug" class="hint" role="status">等待动作诊断</p>
         <p id="vision-status" class="hint" role="status">先让黄色蛋露出轮廓，等金框锁定，再进行三种动作。</p>
         <details class="gesture-guide"><summary>三种动作怎么做 <span>+</span></summary>
           <p>拍头：用一只手从上方靠近蛋头，短促拍下，再抬起。摸头：用手指沿蛋的上端缓慢来回轻扫。双手托住：两只手放在蛋下方，稳定托住片刻。</p>
-          <p>可以一只手拿蛋，另一只手做拍头或摸头。两只手仅仅出现在画面里，不会算作托举。请露出黄色轮廓，摄像头只估计动作与接触。</p>
+          <p>可以一只手拿蛋，另一只手做拍头或摸头。两只手仅仅出现在画面里，不会算作托举。请露出黄色轮廓，摄像头只估计动作与接触。遮挡严重时可点「标记蛋头」，再点击预览中蛋的最上端；手动参考随托蛋手估计位置，移动或换手后请重新标记。</p>
           <label class="slider-label" for="gesture-sensitivity">识别灵敏度 <output id="gesture-sensitivity-value">1.0×</output></label><input id="gesture-sensitivity" type="range" min="60" max="180" value="100">
         </details>
       </section>

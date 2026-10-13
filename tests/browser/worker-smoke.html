@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>后台手部模型验证</title><h1>后台手部模型验证（空白帧，不使用摄像头）</h1><pre id="result">模型加载中…</pre><script type="module">
+const out=document.querySelector('#result'),worker=new Worker(new URL('../../src/twin/hand-worker.ts',import.meta.url),{type:'module'}),canvas=document.createElement('canvas');canvas.width=384;canvas.height=288;canvas.getContext('2d').fillRect(0,0,384,288);
+let count=0,beats=0,begin=performance.now(),timings=[];const ticker=setInterval(()=>beats++,10),deadline=setTimeout(()=>finish('FAIL: 模型超时'),45000);
+function finish(message){clearTimeout(deadline);clearInterval(ticker);worker.terminate();out.textContent=message;}
+async function frame(){const bitmap=await createImageBitmap(canvas);worker.postMessage({type:'frame',time:performance.now(),bitmap},[bitmap]);}
+worker.onmessage=async({data})=>{if(data.type==='ready'){out.textContent=`后台模型已就绪：${data.delegate}`;await frame();}else if(data.type==='error')finish(`FAIL: ${data.message}`);else if(data.type==='result'){timings.push(Math.round(data.ms));if(++count<5)await frame();else finish(JSON.stringify({status:'PASS',backend:'worker',delegate:data.delegate,frames:count,hands:data.hands.length,inferenceMs:timings,mainThreadHeartbeat:beats,elapsedMs:Math.round(performance.now()-begin)},null,2));}};
+worker.onerror=event=>finish(`FAIL: ${event.message}`);worker.postMessage({type:'init',assets:new URL('/mediapipe/',location.href).href});
+</script></html>

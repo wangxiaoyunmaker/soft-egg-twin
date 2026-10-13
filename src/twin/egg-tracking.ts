@@ -22,17 +22,17 @@ const hueDistance=(a:number,b:number)=>Math.min(Math.abs(a-b),360-Math.abs(a-b))
 
 /** Color-connected components near the supporting hand, with temporal association.
  * Pixel coordinates (not normalized x/y) keep PCA correct on non-square video. */
-export function detectEgg(frame:PixelFrame,holder:TrackedHand|undefined,previous:EggObservation|null,color:EggColor=yellowEgg):EggObservation|null {
+export function detectEgg(frame:PixelFrame,holder:TrackedHand|TrackedHand[]|undefined,previous:EggObservation|null,color:EggColor=yellowEgg):EggObservation|null {
   const {width:w,height:h,data}=frame;
-  if(w<8||h<8||data.length<w*h*4||(!holder&&!previous))return null;
+  const holders=Array.isArray(holder)?holder:holder?[holder]:[];
+  if(w<8||h<8||data.length<w*h*4||(!holders.length&&!previous))return null;
   const mask=new Uint8Array(w*h),queue=new Int32Array(w*h);
   for(let i=0;i<mask.length;i++){
     const c=hsv(data[i*4],data[i*4+1],data[i*4+2]);
     if(c.value>.16&&c.saturation>=color.minSaturation&&hueDistance(c.hue,color.hue)<=color.tolerance)mask[i]=1;
   }
-  const p=holder?.landmarks;
-  const palm=p?Math.max(Math.hypot((p[5].x-p[17].x)*w,(p[5].y-p[17].y)*h),Math.hypot((p[0].x-p[9].x)*w,(p[0].y-p[9].y)*h)):w*.12;
-  const anchor=holder?{x:holder.center.x*w,y:holder.center.y*h}:previous?{x:previous.x*w,y:previous.y*h}:null;
+  const regions=holders.map(hand=>{const p=hand.landmarks;return {x:hand.center.x*w,y:hand.center.y*h,palm:Math.max(Math.hypot((p[5].x-p[17].x)*w,(p[5].y-p[17].y)*h),Math.hypot((p[0].x-p[9].x)*w,(p[0].y-p[9].y)*h),w*.025)};});
+  if(!regions.length&&previous)regions.push({x:previous.x*w,y:previous.y*h,palm:w*.12});
   let best:EggObservation|null=null,bestScore=-Infinity;
   for(let seed=0;seed<mask.length;seed++){
     if(!mask[seed])continue;
@@ -51,8 +51,9 @@ export function detectEgg(frame:PixelFrame,holder:TrackedHand|undefined,previous
     const major=4*Math.sqrt(large),minor=4*Math.sqrt(small),ratio=major/minor;
     const fill=tail/((maxX-minX+1)*(maxY-minY+1));
     if(ratio>2.7||fill<.45||fill>.93||minor<6||major>w*.58)continue;
-    const nearHand=anchor?Math.hypot(x-anchor.x,y-anchor.y)/palm:Infinity;
-    if(nearHand>1.7||holder&&(major<palm*.3||major>palm*2.8))continue;
+    const eligible=regions.filter(r=>!holders.length||major>=r.palm*.3&&major<=r.palm*2.8);
+    const nearHand=Math.min(...eligible.map(r=>Math.hypot(x-r.x,y-r.y)/r.palm));
+    if(nearHand>2)continue;
     const continuity=previous?Math.hypot(x-previous.x*w,y-previous.y*h)/w:0;
     if(previous&&(continuity>.16||major/(previous.major*w)<.65||major/(previous.major*w)>1.5))continue;
     const score=Math.log(tail)-nearHand*1.5-continuity*30;

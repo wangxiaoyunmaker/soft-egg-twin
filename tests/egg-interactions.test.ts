@@ -52,3 +52,22 @@ test('a single visible acting hand can pat and stroke without requiring a second
   const v=new EggInteractions();v.sample([headHand(2)],egg,zones,0);v.sample([headHand(1.2)],egg,zones,70);assert.equal(read(v,70).gesture,'pat');
   v.reset();let stroke=false;for(let i=0;i<9;i++){v.sample([headHand(1.05,-.7+i*.18)],egg,zones,i*70);stroke||=read(v,i*70).gesture==='headStroke';}assert.ok(stroke);
 });
+
+test('gradual descent across several frames triggers pat rather than requiring a single boundary jump',()=>{
+  const v=new EggInteractions();for(const [i,u] of [2.3,2,1.8,1.6,1.35].entries())v.sample([headHand(u)],egg,zones,i*80);
+  assert.equal(read(v,320).gesture,'pat');
+});
+test('a static fingertip of the holding hand cannot monopolize the moving hand history',()=>{
+  const v=new EggInteractions(),holder={...headHand(1.0),id:1};let stroke=false;
+  for(let i=0;i<9;i++){v.sample([holder,headHand(1.05,-.7+i*.18)],egg,zones,i*90);stroke||=read(v,i*90).gesture==='headStroke';}
+  assert.ok(stroke);assert.equal(v.debug.reason,'headStroke');
+});
+test('a curved stroke does not require the palm to stay above the egg',()=>{
+  const v=new EggInteractions();let stroke=false;
+  for(let i=0;i<9;i++){const h=headHand(.85+i*.04,-.7+i*.18);h.center={x:.5,y:.55};v.sample([h],egg,zones,i*90);stroke||=read(v,i*90).gesture==='headStroke';}assert.ok(stroke);
+});
+test('cradling can resume after a long sample gap',()=>{
+  const v=new EggInteractions(),a=translateHand(supportHand(),-.05,0),b={...translateHand(supportHand(),.05,0),id:2};
+  for(const t of [0,420,1500,1920])v.sample([a,b],egg,zones,t);
+  assert.equal(read(v,1920).gesture,'cradle');
+});

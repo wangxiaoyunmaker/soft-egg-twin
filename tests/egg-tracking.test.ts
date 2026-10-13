@@ -52,3 +52,9 @@ test('round silhouettes hold roll; recenter and reset clear relative pose safely
 test('interrupted acquisition does not count nonconsecutive detections',()=>{
   const m=new EggMotion();m.receive(observe(),0);m.receive(null,70);m.receive(observe(),140);m.receive(observe(),210);assert.equal(m.acquired,false);m.receive(observe(),280);assert.equal(m.acquired,true);
 });
+
+test('egg search covers both hands even when the chosen positioning hand is above the real egg',()=>{
+  const above=translateHand(supportHand(),0,-.7);
+  assert.equal(detectEgg(eggFrame(),above,null),null);
+  const observation=detectEgg(eggFrame(),[above,supportHand()],null)!;assert.ok(observation);near(observation.x,.5);near(observation.y,.46);
+});

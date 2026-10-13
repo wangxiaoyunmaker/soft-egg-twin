@@ -1,12 +1,24 @@
 import { diagnostics } from '../diagnostics/runtime.ts';
 import { withDeadline } from '../diagnostics/deadline.ts';
-import type { HandLandmarker } from '@mediapipe/tasks-vision';
 import type { DetectedHand,TrackedHand } from './tracking.ts';
 import { detectEgg,hsv,yellowEgg } from './egg-tracking.ts';
 import type { EggObservation } from './egg-tracking.ts';
 export class CameraInput {
   private stream:MediaStream|null=null;
-  private model:HandLandmarker|null=null;
+  private worker:Worker|null=null;
+  private latest:DetectedHand[]|null=null;
+  private inFlight=false;
+  private inferenceMs=0;
+  private jobStarted=0;
+  private delegate='pending';
+  private workerError:string|null=null;
+  private initReject:((error:Error)=>void)|null=null;
+  private frameCanvas=document.createElement('canvas');
+  private frameContext=this.frameCanvas.getContext('2d')!;
+  private readyPixels:ImageData|null=null;
+  private pendingPixels:ImageData|null=null;
+  private resultAt=0;
+
   private generation=0;
   private lastFrame=-1;
   private lastInference=0;
@@ -32,31 +44,57 @@ export class CameraInput {
       await withDeadline(this.video.play(),10000,'启动视频');
       if(generation!==this.generation)return;
       diagnostics?.stage('手部模型加载');diagnostics?.event('model.loading',{});
-      const {FilesetResolver,HandLandmarker}=await import('@mediapipe/tasks-vision');
-      const vision=await withDeadline(FilesetResolver.forVisionTasks(`${import.meta.env.BASE_URL}mediapipe/wasm`),20000,'加载 WASM');
-      const model=await withDeadline(HandLandmarker.createFromOptions(vision,{
-        baseOptions:{modelAssetPath:`${import.meta.env.BASE_URL}mediapipe/hand_landmarker.task`,delegate:'CPU'},
-        runningMode:'VIDEO',numHands:2,minHandDetectionConfidence:.55,minHandPresenceConfidence:.55,minTrackingConfidence:.55,
-      }),30000,'加载手部模型',late=>late.close());
-      if(generation!==this.generation){model.close();return;}
-      this.model=model;this.running=true;this.lastFrame=-1;this.lastInference=0;this.successfulSamples=0;diagnostics?.event('camera.ready',{});
+      const worker=new Worker(new URL('./hand-worker.ts',import.meta.url),{type:'module'});this.worker=worker;
+      const ready=new Promise<void>((resolve,reject)=>{
+        this.initReject=reject;
+        worker.onmessage=event=>{
+          if(generation!==this.generation)return;
+          const data=event.data;
+          if(data.type==='ready'){this.delegate=data.delegate;this.initReject=null;resolve();}
+          else if(data.type==='fallback')diagnostics?.event('hand.worker.cpuFallback',{message:data.message});
+          else if(data.type==='error'){this.workerError=data.message;this.inFlight=false;this.initReject=null;reject(new Error(data.message));diagnostics?.event('hand.worker.error',data.message);}
+          else if(data.type==='result'){
+            this.inFlight=false;this.latest=data.hands;this.readyPixels=this.pendingPixels;this.pendingPixels=null;
+            this.inferenceMs=data.ms;this.delegate=data.delegate;this.resultAt=performance.now();this.successfulSamples++;
+            diagnostics?.recordMeasurement('hand.worker',data.ms);
+          }
+        };
+        worker.onerror=event=>{this.workerError=event.message;this.inFlight=false;reject(new Error(event.message));diagnostics?.event('hand.worker.error',event.message);};
+        worker.postMessage({type:'init',assets:new URL(`${import.meta.env.BASE_URL}mediapipe/`,location.href).href});
+      });
+      await withDeadline(ready,45000,'启动后台手部模型');
+      if(generation!==this.generation){worker.terminate();return;}
+      this.running=true;this.lastFrame=-1;this.lastInference=0;this.successfulSamples=0;diagnostics?.event('camera.ready',{backend:'worker',delegate:this.delegate});
     }catch(error){diagnostics?.event('camera.error',error instanceof Error?error.message:String(error));if(generation===this.generation)this.stop();throw error;}
   }
   sample(now:number):DetectedHand[]|null {
-    if(!this.running||!this.model||this.video.readyState<2||this.video.currentTime===this.lastFrame||now-this.lastInference<65)return null;
-    this.lastFrame=this.video.currentTime;this.lastInference=now;
-    const infer=()=>this.model!.detectForVideo(this.video,now);
-    const result=diagnostics?diagnostics.measure('hand.inference',infer):infer();
-    this.successfulSamples++;
-    return result.landmarks.map((landmarks,i)=>({landmarks,handedness:result.handedness[i]?.[0]?.categoryName??''}));
+    if(this.workerError)throw new Error(this.workerError);
+    if(this.inFlight&&now-this.jobStarted>10000)throw new Error('后台手部计算超过 10 秒，已停止追踪，请重新开启摄像头');
+    const result=this.latest;this.latest=null;
+    if(this.running&&this.worker&&!this.inFlight&&this.video.readyState>=2&&this.video.currentTime!==this.lastFrame&&now-this.lastInference>=55){
+      this.lastFrame=this.video.currentTime;this.lastInference=now;this.inFlight=true;this.jobStarted=now;
+      const worker=this.worker,generation=this.generation;
+      const height=Math.round(384*this.video.videoHeight/this.video.videoWidth);
+      if(this.frameCanvas.width!==384||this.frameCanvas.height!==height){this.frameCanvas.width=384;this.frameCanvas.height=height;}
+      this.frameContext.drawImage(this.video,0,0,this.frameCanvas.width,this.frameCanvas.height);
+      const smallHeight=Math.round(192*this.video.videoHeight/this.video.videoWidth);
+      if(this.pixels.width!==192||this.pixels.height!==smallHeight){this.pixels.width=192;this.pixels.height=smallHeight;}
+      this.context.drawImage(this.frameCanvas,0,0,this.pixels.width,this.pixels.height);
+      this.pendingPixels=this.context.getImageData(0,0,this.pixels.width,this.pixels.height);
+      void createImageBitmap(this.frameCanvas).then(bitmap=>{
+        if(generation!==this.generation){bitmap.close();return;}
+        worker.postMessage({type:'frame',time:now,bitmap},[bitmap]);
+      }).catch(error=>{if(generation===this.generation){this.inFlight=false;this.workerError=String(error);}});
+    }
+    return result;
   }
-  get stats(){return {videoReadyState:this.video.readyState,videoTimeSec:+this.video.currentTime.toFixed(3),videoPaused:this.video.paused,successfulSamples:this.successfulSamples,inferenceAgeMs:this.running&&this.lastInference?Math.round(performance.now()-this.lastInference):null};}
-  sampleEgg(holder:TrackedHand|undefined,now:number):EggObservation|null {
+  get stats(){return {backend:'worker',delegate:this.delegate,inferenceMs:Math.round(this.inferenceMs),inFlight:this.inFlight,videoReadyState:this.video.readyState,videoTimeSec:+this.video.currentTime.toFixed(3),videoPaused:this.video.paused,successfulSamples:this.successfulSamples,inferenceAgeMs:this.running&&this.resultAt?Math.round(performance.now()-this.resultAt):null};}
+  sampleEgg(holder:TrackedHand|undefined,now:number,allHands?:TrackedHand[]):EggObservation|null {
     if(!this.running||this.video.readyState<2)return null;
     const width=192,height=Math.max(8,Math.round(width*this.video.videoHeight/this.video.videoWidth));
     if(this.pixels.width!==width||this.pixels.height!==height){this.pixels.width=width;this.pixels.height=height;}
-    this.context.drawImage(this.video,0,0,width,height);
-    const detect=()=>detectEgg(this.context.getImageData(0,0,width,height),holder,now-this.eggSeen<800?this.egg:null,this.color);
+    if(!this.worker)this.context.drawImage(this.video,0,0,width,height);
+    const detect=()=>detectEgg(this.readyPixels??this.context.getImageData(0,0,width,height),allHands?.length?allHands:holder,now-this.eggSeen<800?this.egg:null,this.color);
     const result=diagnostics?diagnostics.measure('egg.detect',detect):detect();
     if(result){this.egg=result;this.eggSeen=now;}
     return result;
@@ -76,7 +114,7 @@ export class CameraInput {
   stop(){
     diagnostics?.event('camera.stop',{wasRunning:this.running});
     ++this.generation;this.running=false;this.stream?.getTracks().forEach(track=>track.stop());this.stream=null;
-    this.video.pause();this.video.srcObject=null;this.model?.close();this.model=null;
+    this.video.pause();this.video.srcObject=null;this.initReject?.(new Error('摄像头已取消'));this.initReject=null;this.worker?.terminate();this.worker=null;this.latest=null;this.inFlight=false;this.workerError=null;this.readyPixels=this.pendingPixels=null;
     this.egg=null;this.eggSeen=-Infinity;
   }
 }

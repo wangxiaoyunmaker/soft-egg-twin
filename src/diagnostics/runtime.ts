@@ -59,6 +59,9 @@ export class RuntimeDiagnostics {
       if(ms>150&&start-this.lastSlow>5000){this.lastSlow=start;this.event('slow.stage',{stage:name,ms:Math.round(ms)});}
     }
   }
+  recordMeasurement(name:string,ms:number){
+    const bucket=this.totals[name]??={sum:0,max:0,count:0};bucket.sum+=ms;bucket.max=Math.max(bucket.max,ms);bucket.count++;
+  }
   frame(gapMs:number){
     const now=performance.now();this.lastFrame=now;this.frames++;this.maxGap=Math.max(this.maxGap,gapMs);this.pendingStage='等待下一帧';
     if(gapMs>1500&&!document.hidden)this.event('frame.gap',{ms:Math.round(gapMs)});
